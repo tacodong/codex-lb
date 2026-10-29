@@ -346,6 +346,28 @@ def acquire_sqlite_runstate_lock(db_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def require_sqlite_lifecycle_owner(database_url: str) -> None:
+    """Require an existing SQLite store and another process's live sentinel lock."""
+    path = sqlite_db_path_from_url(normalize_sqlite_url(database_url))
+    if path is None or not path.is_file():
+        raise RuntimeError("Serving replicas require an existing local SQLite store")
+    lock_path = sqlite_runstate_lock_path(path).resolve()
+    if not lock_path.is_file():
+        raise RuntimeError("Serving replicas require a live SQLite lifecycle owner")
+    connection = sqlite3.connect(f"{lock_path.as_uri()}?mode=rw", uri=True, timeout=0, isolation_level=None)
+    try:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            if exc.sqlite_errorcode in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+                return
+            raise
+        connection.rollback()
+        raise RuntimeError("Serving replicas require a live SQLite lifecycle owner")
+    finally:
+        connection.close()
+
+
 def release_sqlite_runstate_lock(connection: sqlite3.Connection) -> None:
     """Release a lifetime sentinel lock without deleting its persistent file."""
     try:

@@ -13,6 +13,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Keep the qualified OS and dashboard; apply the scoped dependency locks.
 FROM ghcr.io/soju06/codex-lb:1.25.0-beta.9@sha256:514b4d7fc0c2a7dea5ced20f97eceb43910b1276738a87fa56484f3f4dfde7f7
 USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libpcre2-8-0=10.46-1~deb13u3 \
+       libssl3t64=3.5.7-1~deb13u3 \
+       openssl=3.5.7-1~deb13u3 \
+       openssl-provider-legacy=3.5.7-1~deb13u3 \
+    && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=uv-bin,source=/uv,target=/uv,ro \
     --mount=type=bind,source=pyproject.toml,target=/app/pyproject.toml,ro \
     --mount=type=bind,source=uv.lock,target=/app/uv.lock,ro \
@@ -27,3 +34,6 @@ LABEL org.opencontainers.image.source="https://github.com/tacodong/codex-lb" \
 COPY --chown=app:app app/core/clients/native_egress.py app/core/clients/proxy_websocket.py /app/app/core/clients/
 COPY --chown=app:app app/core/openai/requests.py /app/app/core/openai/requests.py
 COPY --chown=app:app app/modules/proxy/api.py /app/app/modules/proxy/api.py
+COPY --chown=app:app app/main.py /app/app/main.py
+COPY --chown=app:app app/core/auth/dependencies.py /app/app/core/auth/dependencies.py
+COPY --chown=app:app app/db/sqlite_utils.py /app/app/db/sqlite_utils.py

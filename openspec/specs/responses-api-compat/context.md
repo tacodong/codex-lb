@@ -335,7 +335,9 @@ returns; the same request is never replayed. Existing reservation cleanup owners
 and public/native error envelopes remain unchanged.
 
 The stability artifact uses the deployed beta.9 OS/dashboard image by digest
-and layers four repaired application modules on top. Dashboard, schema and native
+and layers the repaired application and serving lifecycle modules on top. Fixed
+pcre2/OpenSSL package versions address the candidate scan findings while preserving
+the OS distribution and runtime ABI. Dashboard, schema and native
 protocol are unchanged. The native helper is rebuilt from the same source against
 the audited dependency lock. Required gates identified fixed vulnerabilities in
 Python HTTP, DNS, decompression and certificate-trust libraries, and native TLS,
@@ -352,3 +354,21 @@ stability branches only, using a source-SHA tag and a per-job package-write toke
 It scans the actual candidate before publication. This supplies destination-side
 image download without broadening the local operator token or compiling on the
 production host with limited disk reserve. It does not deploy the image.
+
+## Serving beside the SQLite lifecycle owner
+
+`app.main:create_serving_replica_app` and
+`app.main:create_keyed_serving_replica_app` are explicit Uvicorn factories for
+parallel serving. They require an existing local SQLite store, a live primary
+sentinel lock and an explicitly configured, inactive bridge identity. Start them
+through Uvicorn's factory interface so the full-server Docker migration entrypoint
+is not invoked. The ordinary factory keeps native global authentication policy;
+the keyed factory requires native API keys for HTTP and WebSocket inference.
+
+Serving replicas reuse native model/routing/cache state, request settlement and
+local usage/key flush tasks. The primary retains initialization, bootstrap,
+global startup cleanup and singleton scheduled jobs. Replica shutdown drains its
+own requests and connections without writing a clean marker for the primary's
+store. For example, a keyed replica can serve a new WebSocket while a primary's
+already-open WebSocket continues on the primary. This role requires the primary
+to remain online; it is not an ownership takeover or an automatic database move.

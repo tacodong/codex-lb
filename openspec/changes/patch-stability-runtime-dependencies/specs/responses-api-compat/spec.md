@@ -4,8 +4,8 @@
 Native socket I/O failures MUST remain terminal and account-neutral without
 exposing private exception details. Responses validation MUST accept and forward
 `output.encrypted_content` while rejecting unknown include values. The immutable
-candidate MUST preserve the deployed OS, dashboard, schema and native protocol
-contracts. Dependency updates MUST be limited to locked fixes required by the
+candidate MUST preserve the deployed OS distribution and runtime ABI, dashboard,
+schema and native protocol contracts. Dependency updates MUST be limited to locked fixes required by the
 release security gates and their necessary dependency updates. The native helper
 MUST be rebuilt from the same application source against the repaired lock and
 MUST pass the native transport wire regressions before deployment.
