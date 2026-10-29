@@ -1,0 +1,66 @@
+name: Stability candidate
+
+on:
+  push:
+    branches: ["codex/stability-*"]
+    paths:
+      - "app/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/Dockerfile.stability"
+      - ".github/workflows/stability-candidate.yml"
+
+concurrency:
+  group: stability-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    if: github.repository == 'tacodong/codex-lb'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+      - name: Build immutable ARM64 candidate
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: scripts/Dockerfile.stability
+          platforms: linux/arm64
+          load: true
+          tags: codex-lb-stability:ci
+          build-args: SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=codex-lb-stability
+          cache-to: type=gha,mode=max,scope=codex-lb-stability
+      - name: Require candidate security scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: codex-lb-stability:ci
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish source-pinned candidate
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:stability-${{ github.sha }}
+        run: |
+          docker tag codex-lb-stability:ci "$IMAGE_REF"
+          docker push "$IMAGE_REF"
+          docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"

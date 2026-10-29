@@ -85,6 +85,7 @@ from app.db.session import (
     init_db,
     mark_sqlite_shutdown_clean,
 )
+from app.db.sqlite_utils import require_sqlite_lifecycle_owner
 from app.modules.accounts import api as accounts_api
 from app.modules.accounts.deletion import build_account_deletion_scheduler
 from app.modules.accounts.repository import AccountsRepository
@@ -517,17 +518,32 @@ async def lifespan(app: FastAPI):
     # accounts instead of all herding onto the lexicographically-first account.
     configure_replica_salt(settings.http_responses_session_bridge_instance_id)
     bridge_endpoint_base_url = settings.http_responses_session_bridge_advertise_base_url
-    await init_db()
+    serving_replica = getattr(app.state, "sqlite_serving_replica", False)
+    if serving_replica:
+        if "http_responses_session_bridge_instance_id" not in settings.model_fields_set:
+            raise RuntimeError("Serving replicas require an explicit bridge instance identity")
+        await asyncio.to_thread(require_sqlite_lifecycle_owner, settings.database_url)
+        if (
+            settings.http_responses_session_bridge_instance_id
+            in await RingMembershipService(SessionLocal).list_active()
+        ):
+            raise RuntimeError("Serving replica bridge identity is already active")
+    else:
+        await init_db()
     init_background_db()
     await verify_encryption_key_fingerprint()
-    _auto_bootstrap_token = await ensure_auto_bootstrap_token()
-    if _auto_bootstrap_token:
-        log_bootstrap_token(logger, _auto_bootstrap_token)
+    if not serving_replica:
+        _auto_bootstrap_token = await ensure_auto_bootstrap_token()
+        if _auto_bootstrap_token:
+            log_bootstrap_token(logger, _auto_bootstrap_token)
     await init_http_client()
     await _report_dashboard_timeout_overrides(settings)
     bridge_durable_schema_ready = await _ensure_bridge_durable_schema_ready(settings)
+    if serving_replica and settings.http_responses_session_bridge_enabled and bridge_durable_schema_ready is not True:
+        raise RuntimeError("Serving replicas require the initialized native bridge schema")
     if bridge_durable_schema_ready is True:
         startup_module.mark_bridge_durable_schema_ready()
+    if bridge_durable_schema_ready is True and not serving_replica:
         dashboard_settings = await get_settings_cache().get()
         ownerless_cutoff = utcnow() - timedelta(seconds=_abandoned_bridge_retention_seconds(dashboard_settings))
         deleted_bridge_rows = await DurableBridgeSessionCoordinator(SessionLocal).purge_owned_sessions_on_startup(
@@ -670,13 +686,14 @@ async def lifespan(app: FastAPI):
 
     await cache_poller.start()
 
-    async with SessionLocal() as session:
-        seeded_count = await AccountsRepository(session).seed_hard_sticky_outage_grace_on_startup()
-    if seeded_count > 0:
-        logger.info(
-            "Seeded hard codex_session purge grace for already-unavailable accounts seeded_count=%s",
-            seeded_count,
-        )
+    if not serving_replica:
+        async with SessionLocal() as session:
+            seeded_count = await AccountsRepository(session).seed_hard_sticky_outage_grace_on_startup()
+        if seeded_count > 0:
+            logger.info(
+                "Seeded hard codex_session purge grace for already-unavailable accounts seeded_count=%s",
+                seeded_count,
+            )
 
     metadata_scheduler = build_metadata_refresh_scheduler()
     usage_scheduler = build_usage_refresh_scheduler()
@@ -696,20 +713,22 @@ async def lifespan(app: FastAPI):
     # even if a nested lifespan on another loop replaces the module-global
     # singleton in the meantime; shutdown below stops exactly this instance.
     live_usage_ingestor = start_live_usage_ingestor()
-    await metadata_scheduler.start()
-    await usage_scheduler.start()
-    await api_key_limit_reset_scheduler.start()
+    if not serving_replica:
+        await metadata_scheduler.start()
+        await usage_scheduler.start()
+        await api_key_limit_reset_scheduler.start()
     await api_key_last_used_flush_scheduler.start()
-    await model_scheduler.start()
-    await sticky_session_cleanup_scheduler.start()
-    await quota_planner_scheduler.start()
-    await auth_guardian_scheduler.start()
-    await automations_scheduler.start()
-    await rate_limit_reset_credits_scheduler.start()
-    await account_usage_rollup_scheduler.start()
-    await account_deletion_scheduler.start()
-    await data_retention_scheduler.start()
-    await telemetry_scheduler.start()
+    if not serving_replica:
+        await model_scheduler.start()
+        await sticky_session_cleanup_scheduler.start()
+        await quota_planner_scheduler.start()
+        await auth_guardian_scheduler.start()
+        await automations_scheduler.start()
+        await rate_limit_reset_credits_scheduler.start()
+        await account_usage_rollup_scheduler.start()
+        await account_deletion_scheduler.start()
+        await data_retention_scheduler.start()
+        await telemetry_scheduler.start()
     if settings.metrics_enabled and PROMETHEUS_AVAILABLE:
         import uvicorn
 
@@ -969,15 +988,26 @@ async def lifespan(app: FastAPI):
             finally:
                 mark_process_dead()
                 try:
-                    await _close_db_and_record_clean_shutdown(
-                        database_tasks_drained=database_tasks_drained,
-                        leader_lease_release_completed=leader_lease_release_completed,
-                    )
+                    if serving_replica:
+                        await close_db()
+                    else:
+                        await _close_db_and_record_clean_shutdown(
+                            database_tasks_drained=database_tasks_drained,
+                            leader_lease_release_completed=leader_lease_release_completed,
+                        )
                 finally:
                     shutdown_state.mark_lifespan_completed()
 
 
-def create_app() -> FastAPI:
+def create_serving_replica_app() -> FastAPI:
+    return create_app(sqlite_serving_replica=True)
+
+
+def create_keyed_serving_replica_app() -> FastAPI:
+    return create_app(sqlite_serving_replica=True, proxy_api_keys_required=True)
+
+
+def create_app(*, sqlite_serving_replica: bool = False, proxy_api_keys_required: bool = False) -> FastAPI:
     settings = get_settings()
     configure_memory_monitor(reject_threshold_mb=settings.memory_reject_threshold_mb)
     app = FastAPI(
@@ -986,6 +1016,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         swagger_ui_parameters={"persistAuthorization": True},
     )
+    app.state.sqlite_serving_replica = sqlite_serving_replica
+    app.state.proxy_api_keys_required = proxy_api_keys_required
     if settings.otel_enabled:
         from app.core.tracing.otel import init_tracing
 

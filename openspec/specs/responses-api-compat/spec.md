@@ -10826,3 +10826,90 @@ SDK parser failure.
 - **THEN** it emits one terminal `response.failed` event
 - **AND** that terminal event includes a stable `response.id`
 
+### Requirement: Native WebSocket bursts retain bounded ordered delivery
+The native WebSocket adapter MUST retain ordered delivery of at least 256 small frames while its consumer is temporarily unscheduled. Its decoded receive queue MUST be bounded by 4096 events and 32 MiB of accounted payload bytes, including UTF-8 text, binary data and the second payload representation for interpreted Responses frames. It MUST continue processing send acknowledgements without waiting for the data consumer. A genuinely overflowing connection MUST fail locally without blocking unrelated connections or penalizing account health. This change MUST preserve the existing HTTP event-queue single-event allowance.
+
+#### Scenario: Small-frame burst
+- **WHEN** 256 small frames arrive before the consumer next runs
+- **THEN** all frames remain available in order without a transport failure
+
+#### Scenario: Send acknowledgement during a burst
+- **WHEN** an acknowledgement arrives after queued data while the consumer has not drained
+- **THEN** the send completes without waiting for the data consumer
+
+#### Scenario: Genuine overflow
+- **WHEN** the event or accounted-byte budget would be exceeded
+- **THEN** the connection fails with an account-neutral local-buffer classification
+- **AND** pending sends and the connection are finalized while unrelated connections remain usable
+
+
+### Requirement: Response adapters finalize their owned inner streams
+Response normalization and error-conversion adapters MUST close their owned inner
+stream when a transport error interrupts iteration, the downstream consumer closes
+early, or iteration is cancelled. Closing the outer native Responses adapter MUST
+reach the service generator's finalizer before returning. Cleanup MUST preserve
+the original public/native error contract and MUST NOT replay the request or
+transfer reservation settlement ownership.
+
+#### Scenario: Native synthetic transport failure
+- **WHEN** a native Responses stream raises after a synthetic transport failure
+- **THEN** its inner service finalizer runs before the outer adapter finishes
+- **AND** the original native transport error remains unchanged
+
+#### Scenario: Consumer closes after output
+- **WHEN** a consumer closes its response stream before the upstream terminal event
+- **THEN** the inner service stream is closed without another upstream attempt
+
+#### Scenario: Cancellation during streaming
+- **WHEN** iteration is cancelled while awaiting an upstream event
+- **THEN** owned inner streams finalize and cancellation remains observable
+
+### Requirement: Candidate artifacts preserve deployed Desktop compatibility
+Native socket I/O failures MUST remain terminal and account-neutral without
+exposing private exception details. Responses validation MUST accept and forward
+`output.encrypted_content` while rejecting unknown include values. The immutable
+candidate MUST preserve the deployed OS distribution and runtime ABI, dashboard,
+schema and native protocol contracts. Dependency updates MUST be limited to locked fixes required by the
+release security gates and their necessary dependency updates. The native helper
+MUST be rebuilt from the same application source against the repaired lock and
+MUST pass the native transport wire regressions before deployment.
+
+#### Scenario: Native receive fails after dispatch
+- **WHEN** the native helper reports a socket transport failure
+- **THEN** the adapter reports an account-neutral terminal failure
+- **AND** no private exception text reaches the client
+
+#### Scenario: Desktop requests encrypted output
+- **WHEN** a valid request includes `output.encrypted_content`
+- **THEN** validation preserves that exact include
+- **AND** unknown include values remain rejected
+
+
+### Requirement: Serving replicas preserve the existing SQLite lifecycle owner
+An explicitly selected serving-replica factory MUST require an existing SQLite
+store with a live lifecycle lock owner and an explicit unique bridge identity.
+It MUST NOT initialize or migrate the store, bootstrap credentials, purge shared
+startup history, start singleton scheduled jobs, or write a clean-shutdown marker.
+It MUST retain native inference routes, cache invalidation, model metadata,
+request settlement, process-local usage ingestion and key last-used flushing.
+
+#### Scenario: Primary remains active
+- **WHEN** a serving replica starts or stops beside an active primary
+- **THEN** the primary retains its lifetime lock and serves existing connections
+- **AND** only the replica's local bridge and process resources are retired
+
+#### Scenario: Primary ownership is absent
+- **WHEN** the store or an active lifecycle owner is absent
+- **THEN** replica startup fails without creating or initializing a store
+
+### Requirement: Per-listener key enforcement preserves native validation
+A mandatory-key serving factory MUST require a valid native API key for both
+HTTP and WebSocket inference regardless of the shared global auth setting. The
+ordinary serving factory MUST retain native global authentication behavior.
+Neither factory MAY change shared authentication settings or restrict models,
+accounts or supported request capabilities.
+
+#### Scenario: Global key authentication is disabled
+- **WHEN** a client omits a valid key on the mandatory-key listener
+- **THEN** both HTTP and WebSocket inference are denied
+- **AND** the ordinary listener retains its native global policy

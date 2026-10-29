@@ -117,6 +117,9 @@ async def validate_proxy_api_key_authorization(
     *,
     request: HTTPConnection | None = None,
 ) -> ApiKeyData | None:
+    application = request.scope.get("app") if request is not None else None
+    if application is not None and getattr(application.state, "proxy_api_keys_required", False):
+        return await validate_required_proxy_api_key_authorization(authorization)
     settings = await get_settings_cache().get()
     if not settings.api_key_auth_enabled:
         if request is not None and not is_local_request(request):

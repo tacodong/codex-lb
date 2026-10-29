@@ -231,6 +231,7 @@ def is_account_neutral_websocket_error_code(error_code: str | None) -> bool:
         PROCESS_NETWORK_UNAVAILABLE_CODE,
         UPSTREAM_WEBSOCKET_LIVENESS_TIMEOUT_CODE,
         "upstream_keepalive_timeout",
+        "upstream_consumer_backpressure",
     }
 
 
@@ -471,12 +472,17 @@ def _native_websocket_transport_error(
     operation: str,
 ) -> UpstreamWebSocketTransportError:
     phase = exc.failure_phase if isinstance(exc, NativeEgressTransportError) else "protocol"
+    if phase == "consumer_backpressure":
+        return UpstreamWebSocketTransportError(
+            "Local websocket receive buffer exceeded its bounded capacity",
+            error_code="upstream_consumer_backpressure",
+        )
     if phase == "liveness_timeout":
         return UpstreamWebSocketTransportError(
             f"Upstream websocket {operation} failed",
             error_code=UPSTREAM_WEBSOCKET_LIVENESS_TIMEOUT_CODE,
         )
-    account_neutral = phase in {"helper_exit", "helper_read", "helper_write", "shutdown"}
+    account_neutral = phase in {"transport", "helper_exit", "helper_read", "helper_write", "shutdown"}
     return UpstreamWebSocketTransportError(
         f"Upstream websocket {operation} failed",
         error_code=PROCESS_NETWORK_UNAVAILABLE_CODE if account_neutral else "upstream_unavailable",
