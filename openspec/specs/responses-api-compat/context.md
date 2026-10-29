@@ -335,7 +335,9 @@ returns; the same request is never replayed. Existing reservation cleanup owners
 and public/native error envelopes remain unchanged.
 
 The stability artifact uses the deployed beta.9 image by digest and layers four
-application modules on top. Native helper, dependencies, dashboard and schema are
-unchanged. It includes the deployed account-neutral socket classification and
+application modules on top. Native helper, dashboard and schema are unchanged. The required image scan
+identified fixed vulnerabilities in aiohttp, dnspython and urllib3, so the
+candidate applies their minimum fixed versions and the required yarl dependency from the frozen lock. Other
+dependencies retain their deployed versions. It includes the deployed account-neutral socket classification and
 `output.encrypted_content` compatibility. This is a narrowly scoped downstream
 backport; it does not qualify all later upstream main changes.
