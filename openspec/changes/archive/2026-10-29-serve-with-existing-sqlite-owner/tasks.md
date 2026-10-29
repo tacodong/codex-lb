@@ -6,4 +6,4 @@
 ## Verification
 - [x] Verify ownership fencing and per-listener HTTP/WebSocket authentication.
 - [x] Verify serving startup/teardown preserves primary ownership and singleton jobs.
-- [ ] Exercise two real processes on isolated state before live activation.
+- [x] Exercise two real processes on isolated state before live activation.
