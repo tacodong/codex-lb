@@ -310,3 +310,32 @@ advance the stream from different tasks.
 ## Detached retirement sweep deadline
 
 Issue #2149 bounds aggregate detached-session lock waiting during request finalization. A sweep shares five seconds: if its first attempt consumes three seconds, the next receives two, and later attempts stop at expiry. Deferred generations remain tracked for later requests and their lifecycle owners. The deadline does not cancel resource-close owners or replace their existing close timeout.
+
+## Native WebSocket receive bursts
+
+The decoded native WebSocket receive queue shares byte accounting with the
+existing helper event queue. A 4096-event cap permits ordinary small-frame
+bursts; a 32 MiB accounted-payload cap bounds stalled consumers. Interpreted
+Responses frames retain text and a decoded representation, so both count.
+Overflow is a local consumer condition, not evidence of an unhealthy account.
+
+For example, a 256-frame reasoning burst can remain queued while a send
+acknowledgement completes. Sustained overflow still terminates that connection
+without stopping the shared helper reader or unrelated connections. No automatic
+replay is added because a dispatched request may already have had effects.
+
+## Interrupted response stream ownership
+
+Response normalization and error-conversion adapters own the inner iterator they
+consume. Each closes that iterator in a finally block so a synthetic native
+transport failure, early downstream close, or cancelled iteration reaches the
+service finalizer immediately. For example, a native error frame that becomes
+`stream_incomplete` must release its service resources before the outer iterator
+returns; the same request is never replayed. Existing reservation cleanup owners
+and public/native error envelopes remain unchanged.
+
+The stability artifact uses the deployed beta.9 image by digest and layers four
+application modules on top. Native helper, dependencies, dashboard and schema are
+unchanged. It includes the deployed account-neutral socket classification and
+`output.encrypted_content` compatibility. This is a narrowly scoped downstream
+backport; it does not qualify all later upstream main changes.
