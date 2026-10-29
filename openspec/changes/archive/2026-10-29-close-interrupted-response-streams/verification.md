@@ -12,5 +12,9 @@
   `09357247d7e9c2e9e99f94259fdbb8874f10a2d4`.
 - HTTP closure is independently scoped to the three adapters using the existing
   close helper; unrelated error remapping from upstream PR #2472 is excluded.
-- Pending: immutable image qualification and native-helper wire regression.
-  No production rollout or long-running client stability is claimed.
+- Immutable ARM64 candidate qualified with the bundled native helper: 20 persistent
+  turns, 5120 ordered frames, send acknowledgements progress while receive queues
+  are full. Raw and interpreted modes pass. Native/public cleanup each finalizes
+  once while preserving its error contract. Network disabled; no production mounts.
+- Image ID: `sha256:3789fb4103aa022082dd7a97b8aa477c3160bffaff9d29118fc752f1b4864dac`.
+- No production rollout or long-running client stability is claimed.

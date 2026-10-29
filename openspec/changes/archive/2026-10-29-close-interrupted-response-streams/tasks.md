@@ -6,4 +6,4 @@
 ## Verification
 - [x] Run cleanup, response-surface and existing native transport regressions.
 - [x] Validate and synchronize the scoped OpenSpec requirements.
-- [ ] Qualify the immutable image before any parallel serving test.
+- [x] Qualify the immutable image before any parallel serving test.

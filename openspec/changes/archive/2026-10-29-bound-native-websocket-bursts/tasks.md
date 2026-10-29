@@ -5,4 +5,4 @@
 
 ## 2. Verification
 - [x] 2.1 Run focused tests, local CI and inspect the final diff.
-- [ ] 2.2 Validate and synchronize the scoped OpenSpec requirement; archive with verification notes.
+- [x] 2.2 Validate and synchronize the scoped OpenSpec requirement; archive with verification notes.
