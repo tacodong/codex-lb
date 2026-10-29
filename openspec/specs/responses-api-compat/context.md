@@ -334,10 +334,21 @@ service finalizer immediately. For example, a native error frame that becomes
 returns; the same request is never replayed. Existing reservation cleanup owners
 and public/native error envelopes remain unchanged.
 
-The stability artifact uses the deployed beta.9 image by digest and layers four
-application modules on top. Native helper, dashboard and schema are unchanged. The required image scan
-identified fixed vulnerabilities in aiohttp, dnspython and urllib3, so the
-candidate applies their minimum fixed versions and the required yarl dependency from the frozen lock. Other
-dependencies retain their deployed versions. It includes the deployed account-neutral socket classification and
-`output.encrypted_content` compatibility. This is a narrowly scoped downstream
-backport; it does not qualify all later upstream main changes.
+The stability artifact uses the deployed beta.9 OS/dashboard image by digest
+and layers four repaired application modules on top. Dashboard, schema and native
+protocol are unchanged. The native helper is rebuilt from the same source against
+the audited dependency lock. Required gates identified fixed vulnerabilities in
+Python HTTP, DNS, decompression and certificate-trust libraries, and native TLS,
+async I/O and decompression dependencies. Their necessary dependency updates are
+locked; unrelated application changes are excluded.
+
+The native TLS repair follows upstream rustls #2622 and its crypto-provider
+prerequisite. The artifact also carries the deployed account-neutral socket
+classification and `output.encrypted_content` compatibility. This remains a
+scoped downstream backport; it does not qualify later upstream main changes.
+
+The stability workflow publishes an ARM64 artifact from trusted same-repository
+stability branches only, using a source-SHA tag and a per-job package-write token.
+It scans the actual candidate before publication. This supplies destination-side
+image download without broadening the local operator token or compiling on the
+production host with limited disk reserve. It does not deploy the image.

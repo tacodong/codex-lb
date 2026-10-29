@@ -1,16 +1,26 @@
 ## Why
 
-The required image scan rejects the beta.9 lock for fixed denial-of-service
-vulnerabilities in aiohttp, dnspython and urllib3. The stability artifact must
-include the minimum fixed dependencies rather than bypassing that gate.
+Required release audits reject the beta.9 dependency locks for fixed HTTP, DNS,
+decompression, certificate-trust, TLS and async I/O vulnerabilities. The stream
+repairs need a releasable artifact without bypassing those gates.
 
 ## What Changes
 
-Update only those three libraries plus the yarl version required by aiohttp and install those exact versions on
-the pinned runtime base. Native helper, schema and application repairs remain
-unchanged.
+- Update aiohttp, dnspython, urllib3, brotli and certifi, plus yarl required by aiohttp.
+- Apply scoped native TLS, async I/O and decompression dependency updates, following
+  upstream rustls #2622 and its crypto-provider prerequisite where applicable.
+- Rebuild the same native source against the repaired lock. Preserve the native
+  protocol, replay/routing behavior, dashboard, OS base and database schema.
+- Publish a scanned ARM64 candidate from trusted stability branches with a
+  source-SHA tag and a per-job package-write token. Publication does not deploy.
 
 ## Capabilities
 
 ### Modified Capabilities
-- `responses-api-compat`: qualified runtime dependency boundary.
+- `responses-api-compat`: qualified runtime dependency and artifact boundary.
+
+## Verification
+
+Requalify the rebuilt native helper and candidate before serving production
+requests. The original helper-preservation constraint no longer applies because
+the required audits identify fixed vulnerabilities in its bundled dependencies.
