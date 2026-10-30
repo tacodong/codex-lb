@@ -1,6 +1,7 @@
 name: Stability candidate
 
 on:
+  workflow_dispatch:
   push:
     branches: ["codex/stability-*"]
     paths:
@@ -22,7 +23,7 @@ permissions:
 
 jobs:
   image:
-    if: github.repository == 'tacodong/codex-lb'
+    if: github.repository == 'tacodong/codex-lb' && startsWith(github.ref, 'refs/heads/codex/stability-')
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     permissions:

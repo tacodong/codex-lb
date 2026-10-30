@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main"]
   # No `edited`: a PR title/body edit (agents finalizing descriptions, review
