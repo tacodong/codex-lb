@@ -44,6 +44,44 @@ async def test_native_small_frame_burst_is_delivered_in_order():
     owner._abort_request.assert_not_awaited()
 
 
+@pytest.mark.parametrize("reason", ["connection_reset", "unexpected_eof", "close_without_handshake"])
+async def test_native_wire_reason_reaches_relay_without_private_details(reason):
+    ws, events, owner = socket()
+    events.put_nowait(
+        {
+            "type": "websocket_error",
+            "message": "private exception https://secret.invalid/?token=credential",
+            "failure_phase": "transport",
+            "failure_reason": reason,
+        }
+    )
+    frame = await NativeUpstreamWebSocket(ws).receive()
+    assert frame.error == f"Upstream websocket receive failed (native phase=transport reason={reason})"
+    assert is_account_neutral_websocket_error_code(frame.error_code)
+    owner._finish_request.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "metadata", [{}, {"failure_reason": "https://secret.invalid/token"}, {"failure_reason": ["connection_reset"]}]
+)
+async def test_native_wire_absent_or_unknown_reason_keeps_legacy_error(metadata):
+    ws, events, owner = socket()
+    events.put_nowait({"type": "websocket_error", "failure_phase": "transport", **metadata})
+    frame = await NativeUpstreamWebSocket(ws).receive()
+    assert frame.error == "Upstream websocket receive failed"
+    assert is_account_neutral_websocket_error_code(frame.error_code)
+    owner._finish_request.assert_called_once()
+
+
+async def test_native_wire_private_phase_is_not_exposed():
+    ws, events, _owner = socket()
+    events.put_nowait(
+        {"type": "websocket_error", "failure_phase": "private credential", "failure_reason": "connection_reset"}
+    )
+    frame = await NativeUpstreamWebSocket(ws).receive()
+    assert frame.error == "Upstream websocket receive failed (native phase=unknown reason=connection_reset)"
+
+
 async def test_native_genuine_overflow_is_bounded_and_account_neutral():
     ws, events, owner = socket()
     for index in range(4097):

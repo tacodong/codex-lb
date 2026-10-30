@@ -156,6 +156,29 @@ class NativeEgressProtocolError(NativeEgressError):
     """Raised when the helper violates the framed stream contract."""
 
 
+_WEBSOCKET_FAILURE_REASONS = frozenset(
+    {
+        "setup",
+        "connect_timeout",
+        "pong_timeout",
+        "helper_output",
+        "tls_verification",
+        "connection_reset",
+        "connection_aborted",
+        "connection_refused",
+        "broken_pipe",
+        "unexpected_eof",
+        "io_timeout",
+        "io",
+        "tls",
+        "http_handshake",
+        "close_without_handshake",
+        "connection_closed",
+        "protocol",
+    }
+)
+
+
 class NativeEgressTransportError(NativeEgressError):
     """Raised when the helper cannot complete the upstream request."""
 
@@ -164,6 +187,7 @@ class NativeEgressTransportError(NativeEgressError):
         message: str,
         *,
         failure_phase: str = "request",
+        failure_reason: str | None = None,
         retryable_same_contract: bool = False,
         is_tls_verification_failure: bool = False,
         status_code: int | None = None,
@@ -172,6 +196,7 @@ class NativeEgressTransportError(NativeEgressError):
     ) -> None:
         super().__init__(message)
         self.failure_phase = failure_phase
+        self.failure_reason = failure_reason if failure_reason in _WEBSOCKET_FAILURE_REASONS else None
         self.retryable_same_contract = retryable_same_contract
         self.is_tls_verification_failure = is_tls_verification_failure
         self.status_code = status_code
@@ -1275,6 +1300,7 @@ def _transport_error_from_event(event: Mapping[str, object]) -> NativeEgressTran
 def _websocket_error_from_event(event: Mapping[str, object]) -> NativeEgressTransportError:
     message = event.get("message")
     failure_phase = event.get("failure_phase")
+    failure_reason = event.get("failure_reason")
     retryable_same_contract = event.get("retryable_same_contract")
     is_tls_verification_failure = event.get("is_tls_verification_failure")
     status = event.get("status")
@@ -1292,6 +1318,7 @@ def _websocket_error_from_event(event: Mapping[str, object]) -> NativeEgressTran
     return NativeEgressTransportError(
         message if isinstance(message, str) else "native websocket failed",
         failure_phase=failure_phase if isinstance(failure_phase, str) else "websocket",
+        failure_reason=failure_reason if isinstance(failure_reason, str) else None,
         retryable_same_contract=retryable_same_contract if isinstance(retryable_same_contract, bool) else False,
         is_tls_verification_failure=(
             is_tls_verification_failure if isinstance(is_tls_verification_failure, bool) else False
