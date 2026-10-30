@@ -58,6 +58,58 @@ async fn read_event(lines: &mut HelperLines, timeout_message: &str) -> Value {
 }
 
 #[tokio::test]
+async fn abrupt_peer_eof_emits_safe_reason() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+    let address = listener.local_addr().expect("server address");
+    let (release_server, wait_for_open) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept client");
+        let mut extensions = ExtensionsConfig::default();
+        extensions.permessage_deflate = Some(DeflateConfig::default());
+        let mut config = WebSocketConfig::default();
+        config.extensions = extensions;
+        let websocket = accept_async_with_config(stream, Some(config))
+            .await
+            .expect("handshake");
+        wait_for_open.await.expect("release server");
+        drop(websocket);
+    });
+    let (mut helper, mut stdin, mut lines) = start_helper().await;
+    write_command(
+        &mut stdin,
+        &json!({
+            "type": "websocket_connect",
+            "request_id": "eof-test",
+            "url": format!("ws://{address}/private?token=synthetic-secret"),
+            "headers": [],
+            "connect_timeout_ms": 2_000,
+            "max_message_bytes": 1_024,
+            "ping_interval_ms": null,
+            "ping_timeout_ms": null,
+            "proxy_url": null
+        }),
+    )
+    .await;
+    assert_eq!(
+        read_event(&mut lines, "open timeout").await["type"],
+        "websocket_open"
+    );
+    release_server.send(()).expect("release server");
+    let failure = read_event(&mut lines, "EOF timeout").await;
+    assert_eq!(failure["type"], "websocket_error");
+    assert_eq!(failure["failure_reason"], "close_without_handshake");
+    assert_eq!(failure["retryable_same_contract"], false);
+    assert!(!failure.to_string().contains("synthetic-secret"));
+    assert!(!failure.to_string().contains(&address.to_string()));
+    drop(stdin);
+    tokio::time::timeout(Duration::from_secs(2), helper.wait())
+        .await
+        .expect("exit timeout")
+        .expect("helper exit");
+    server.await.expect("server task");
+}
+
+#[tokio::test]
 async fn missing_pong_emits_liveness_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -101,6 +153,7 @@ async fn missing_pong_emits_liveness_timeout() {
     let failure = read_event(&mut lines, "liveness event timeout").await;
     assert_eq!(failure["type"], "websocket_error");
     assert_eq!(failure["failure_phase"], "liveness_timeout");
+    assert_eq!(failure["failure_reason"], "pong_timeout");
     assert_eq!(failure["retryable_same_contract"], false);
 
     release_server

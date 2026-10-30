@@ -14,7 +14,7 @@ use tokio_tungstenite::Connector;
 use tokio_tungstenite::client_async_tls_with_config;
 use tokio_tungstenite::proxy::connect_via_proxy;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio_tungstenite::tungstenite::error::TlsError;
+use tokio_tungstenite::tungstenite::error::{ProtocolError, TlsError};
 use tokio_tungstenite::tungstenite::handshake::client::Response as WebSocketResponse;
 use tokio_tungstenite::tungstenite::http::HeaderName as WebSocketHeaderName;
 use tokio_tungstenite::tungstenite::http::HeaderValue as WebSocketHeaderValue;
@@ -432,6 +432,7 @@ pub(crate) async fn emit_websocket_setup_error(
             command_id,
             message: message.to_owned(),
             failure_phase: "setup".to_owned(),
+            failure_reason: Some("setup".to_owned()),
             retryable_same_contract: false,
             is_tls_verification_failure: false,
             status: None,
@@ -538,6 +539,7 @@ pub(crate) async fn emit_websocket_error(
             command_id,
             message: message.to_owned(),
             failure_phase: phase.to_owned(),
+            failure_reason: Some(websocket_failure_reason(failure).to_owned()),
             retryable_same_contract: retryable,
             is_tls_verification_failure: tls_verification,
             status,
@@ -546,6 +548,36 @@ pub(crate) async fn emit_websocket_error(
         },
     )
     .await
+}
+
+fn websocket_failure_reason(failure: &NativeWebSocketFailure) -> &'static str {
+    if websocket_tls_verification_failure(failure) {
+        return "tls_verification";
+    }
+    let error = match failure {
+        NativeWebSocketFailure::Timeout => return "connect_timeout",
+        NativeWebSocketFailure::LivenessTimeout => return "pong_timeout",
+        NativeWebSocketFailure::Output(_) => return "helper_output",
+        NativeWebSocketFailure::Connect(error) | NativeWebSocketFailure::WebSocket(error) => error,
+    };
+    match error {
+        WebSocketError::Io(error) => match error.kind() {
+            std::io::ErrorKind::ConnectionReset => "connection_reset",
+            std::io::ErrorKind::ConnectionAborted => "connection_aborted",
+            std::io::ErrorKind::ConnectionRefused => "connection_refused",
+            std::io::ErrorKind::BrokenPipe => "broken_pipe",
+            std::io::ErrorKind::UnexpectedEof => "unexpected_eof",
+            std::io::ErrorKind::TimedOut => "io_timeout",
+            _ => "io",
+        },
+        WebSocketError::Tls(_) => "tls",
+        WebSocketError::Http(_) => "http_handshake",
+        WebSocketError::Protocol(ProtocolError::ResetWithoutClosingHandshake) => {
+            "close_without_handshake"
+        }
+        WebSocketError::ConnectionClosed | WebSocketError::AlreadyClosed => "connection_closed",
+        _ => "protocol",
+    }
 }
 
 fn websocket_tls_verification_failure(failure: &NativeWebSocketFailure) -> bool {
@@ -558,5 +590,28 @@ fn websocket_tls_verification_failure(failure: &NativeWebSocketFailure) -> bool 
             error_chain_has_invalid_certificate(error)
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn io_reasons_never_use_private_error_text() {
+        for (kind, expected) in [
+            (std::io::ErrorKind::ConnectionReset, "connection_reset"),
+            (std::io::ErrorKind::ConnectionAborted, "connection_aborted"),
+            (std::io::ErrorKind::ConnectionRefused, "connection_refused"),
+            (std::io::ErrorKind::BrokenPipe, "broken_pipe"),
+            (std::io::ErrorKind::UnexpectedEof, "unexpected_eof"),
+            (std::io::ErrorKind::TimedOut, "io_timeout"),
+            (std::io::ErrorKind::Other, "io"),
+        ] {
+            let failure = NativeWebSocketFailure::WebSocket(WebSocketError::Io(
+                std::io::Error::new(kind, "https://private.invalid/?token=secret"),
+            ));
+            assert_eq!(websocket_failure_reason(&failure), expected);
+        }
     }
 }

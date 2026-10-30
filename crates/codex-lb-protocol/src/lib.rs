@@ -174,6 +174,8 @@ pub enum NativeEvent {
         command_id: Option<String>,
         message: String,
         failure_phase: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failure_reason: Option<String>,
         retryable_same_contract: bool,
         is_tls_verification_failure: bool,
         status: Option<u16>,
@@ -195,6 +197,18 @@ pub enum NativeEvent {
 #[cfg(test)]
 mod tests {
     use super::{CAPABILITIES, NativeCommand, NativeEvent, PROTOCOL_VERSION};
+
+    #[test]
+    fn old_websocket_errors_remain_compatible() {
+        let old = serde_json::json!({
+            "type": "websocket_error", "request_id": "old", "command_id": null,
+            "message": "native websocket transport failed", "failure_phase": "transport",
+            "retryable_same_contract": false, "is_tls_verification_failure": false,
+            "status": null, "headers": [], "body": null
+        });
+        let event: NativeEvent = serde_json::from_value(old.clone()).expect("old helper event");
+        assert_eq!(serde_json::to_value(event).expect("serialize event"), old);
+    }
 
     #[test]
     fn hello_contract_is_stable() {

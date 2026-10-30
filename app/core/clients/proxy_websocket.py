@@ -472,6 +472,14 @@ def _native_websocket_transport_error(
     operation: str,
 ) -> UpstreamWebSocketTransportError:
     phase = exc.failure_phase if isinstance(exc, NativeEgressTransportError) else "protocol"
+    message = f"Upstream websocket {operation} failed"
+    if isinstance(exc, NativeEgressTransportError) and exc.failure_reason is not None:
+        safe_phase = (
+            phase
+            if phase in {"setup", "connect", "transport", "protocol", "liveness_timeout", "helper_write"}
+            else "unknown"
+        )
+        message += f" (native phase={safe_phase} reason={exc.failure_reason})"
     if phase == "consumer_backpressure":
         return UpstreamWebSocketTransportError(
             "Local websocket receive buffer exceeded its bounded capacity",
@@ -479,12 +487,16 @@ def _native_websocket_transport_error(
         )
     if phase == "liveness_timeout":
         return UpstreamWebSocketTransportError(
-            f"Upstream websocket {operation} failed",
+            message,
             error_code=UPSTREAM_WEBSOCKET_LIVENESS_TIMEOUT_CODE,
         )
-    account_neutral = phase in {"transport", "helper_exit", "helper_read", "helper_write", "shutdown"}
+    account_neutral = phase in {"transport", "helper_exit", "helper_read", "helper_write", "shutdown"} or (
+        phase == "protocol"
+        and isinstance(exc, NativeEgressTransportError)
+        and exc.failure_reason in {"close_without_handshake", "connection_closed"}
+    )
     return UpstreamWebSocketTransportError(
-        f"Upstream websocket {operation} failed",
+        message,
         error_code=PROCESS_NETWORK_UNAVAILABLE_CODE if account_neutral else "upstream_unavailable",
     )
 

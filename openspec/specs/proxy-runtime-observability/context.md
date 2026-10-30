@@ -56,3 +56,8 @@ GROUP BY sticky_key_source, sticky_kind, sticky_key_hash;
 The affinity history converges with dashboard roles, users, the final compatibility-credential projection and audit actor columns through a no-op merge. Published revisions remain unchanged. Databases already on the authentication branch retain their current credentials and session generations; the earlier credential projection is not replayed on merge-only reupgrade. Databases on the older affinity history run the existing authentication backfills once. Ledgerless schema bootstrap retains those migrations' existing legacy-credential projection behavior.
 
 The subsequent invite migration converges through a second no-op join. Pending, consumed and revoked invite rows retain their hashes, expiry/consumption/revocation times, creator snapshots and flags. The older affinity history creates an empty invite table through the unchanged upstream migration.
+
+
+## Native WebSocket receive-failure evidence
+
+October 30 failures were reduced to a generic receive error. Optional fixed helper reasons now distinguish reset, EOF, missing close handshake, TLS, protocol and liveness failures without raw error strings. Python validates an allowlist and appends a safe phase/reason to the existing relay message, for example `Upstream websocket receive failed (native phase=transport reason=connection_reset)`. Missing or unknown reasons retain the older generic message. Typed missing-handshake and already-closed failures use existing account-neutral terminal/no-replay handling; other classifications are unchanged; a reset still does not establish which network hop caused it.

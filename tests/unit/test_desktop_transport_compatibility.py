@@ -21,6 +21,19 @@ async def test_native_socket_receive_preserves_account_neutral_terminal_failure(
     native.receive.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_native_socket_send_preserves_safe_reason_and_health_classification() -> None:
+    native = AsyncMock(spec=NativeEgressWebSocket)
+    native.send_text.side_effect = NativeEgressTransportError(
+        "private socket error", failure_phase="transport", failure_reason="broken_pipe"
+    )
+    with pytest.raises(proxy_websocket.UpstreamWebSocketTransportError) as caught:
+        await proxy_websocket.NativeUpstreamWebSocket(native).send_text("synthetic")
+    assert str(caught.value) == "Upstream websocket send failed (native phase=transport reason=broken_pipe)"
+    assert proxy_websocket.is_account_neutral_websocket_error_code(caught.value.error_code)
+    native.send_text.assert_awaited_once_with("synthetic")
+
+
 def test_desktop_output_include_is_preserved_without_allowing_unknown_values() -> None:
     payload = {
         "model": "gpt-6.1-sol",
