@@ -490,7 +490,11 @@ def _native_websocket_transport_error(
             message,
             error_code=UPSTREAM_WEBSOCKET_LIVENESS_TIMEOUT_CODE,
         )
-    account_neutral = phase in {"transport", "helper_exit", "helper_read", "helper_write", "shutdown"}
+    account_neutral = phase in {"transport", "helper_exit", "helper_read", "helper_write", "shutdown"} or (
+        phase == "protocol"
+        and isinstance(exc, NativeEgressTransportError)
+        and exc.failure_reason in {"close_without_handshake", "connection_closed"}
+    )
     return UpstreamWebSocketTransportError(
         message,
         error_code=PROCESS_NETWORK_UNAVAILABLE_CODE if account_neutral else "upstream_unavailable",

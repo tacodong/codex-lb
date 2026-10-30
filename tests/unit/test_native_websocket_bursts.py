@@ -44,21 +44,36 @@ async def test_native_small_frame_burst_is_delivered_in_order():
     owner._abort_request.assert_not_awaited()
 
 
-@pytest.mark.parametrize("reason", ["connection_reset", "unexpected_eof", "close_without_handshake"])
-async def test_native_wire_reason_reaches_relay_without_private_details(reason):
+@pytest.mark.parametrize(
+    ("phase", "reason"),
+    [
+        ("transport", "connection_reset"),
+        ("transport", "unexpected_eof"),
+        ("protocol", "close_without_handshake"),
+        ("protocol", "connection_closed"),
+    ],
+)
+async def test_native_wire_reason_reaches_relay_without_private_details(phase, reason):
     ws, events, owner = socket()
     events.put_nowait(
         {
             "type": "websocket_error",
             "message": "private exception https://secret.invalid/?token=credential",
-            "failure_phase": "transport",
+            "failure_phase": phase,
             "failure_reason": reason,
         }
     )
     frame = await NativeUpstreamWebSocket(ws).receive()
-    assert frame.error == f"Upstream websocket receive failed (native phase=transport reason={reason})"
+    assert frame.error == f"Upstream websocket receive failed (native phase={phase} reason={reason})"
     assert is_account_neutral_websocket_error_code(frame.error_code)
     owner._finish_request.assert_called_once()
+
+
+async def test_native_other_protocol_failure_keeps_existing_health_classification():
+    ws, events, _owner = socket()
+    events.put_nowait({"type": "websocket_error", "failure_phase": "protocol", "failure_reason": "protocol"})
+    frame = await NativeUpstreamWebSocket(ws).receive()
+    assert not is_account_neutral_websocket_error_code(frame.error_code)
 
 
 @pytest.mark.parametrize(

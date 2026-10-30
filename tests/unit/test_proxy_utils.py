@@ -46,6 +46,7 @@ from app.core.clients.proxy_websocket import (
     UPSTREAM_WEBSOCKET_LIVENESS_TIMEOUT_CODE,
     CodexUpstreamWebSocket,
     UpstreamWebSocket,
+    UpstreamWebSocketMessage,
     UpstreamWebSocketTransportError,
     WebsocketsUpstreamWebSocket,
 )
@@ -35480,13 +35481,19 @@ async def test_relay_upstream_websocket_latches_transport_end_before_pending_loc
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "error_code",
-    ["proxy_network_unavailable", UPSTREAM_WEBSOCKET_LIVENESS_TIMEOUT_CODE],
-    ids=["process-network", "liveness-timeout"],
+    ("error_code", "native_reason"),
+    [
+        ("proxy_network_unavailable", None),
+        (UPSTREAM_WEBSOCKET_LIVENESS_TIMEOUT_CODE, None),
+        ("proxy_network_unavailable", "close_without_handshake"),
+        ("proxy_network_unavailable", "connection_closed"),
+    ],
+    ids=["process-network", "liveness-timeout", "native-peer-eof", "native-already-closed"],
 )
 async def test_relay_upstream_websocket_account_neutral_failure_is_not_replayed(
     monkeypatch: pytest.MonkeyPatch,
     error_code: str,
+    native_reason: str | None,
 ) -> None:
     request_logs = _RequestLogsRecorder()
     service = proxy_service.ProxyService(_repo_factory(request_logs))
@@ -35509,7 +35516,16 @@ async def test_relay_upstream_websocket_account_neutral_failure_is_not_replayed(
         def __init__(self) -> None:
             self.closed = False
 
-        async def receive(self) -> SimpleNamespace:
+        async def receive(self) -> SimpleNamespace | UpstreamWebSocketMessage:
+            if native_reason is not None:
+                from app.core.clients.native_egress import NativeEgressTransportError, NativeEgressWebSocket
+                from app.core.clients.proxy_websocket import NativeUpstreamWebSocket
+
+                native = AsyncMock(spec=NativeEgressWebSocket)
+                native.receive.side_effect = NativeEgressTransportError(
+                    "private transport failure", failure_phase="protocol", failure_reason=native_reason
+                )
+                return await NativeUpstreamWebSocket(native).receive()
             return SimpleNamespace(
                 kind="error",
                 text=None,
