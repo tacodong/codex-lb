@@ -13,6 +13,158 @@ Owning specifications:
 [Responses compatibility](https://github.com/tacodong/codex-lb/blob/codex/stability-beta9-base/openspec/specs/responses-api-compat/spec.md),
 and [replica operations](https://github.com/tacodong/codex-lb/blob/codex/stability-beta9-base/openspec/specs/replica-operations/spec.md).
 
+## Catalogue of the shipped stability fixes
+
+This catalogue covers our October 20–November 1 stability work, including the
+older compatibility hooks subsequently moved into the application image. The
+qualified pin-rotation artifact listed below contains the preceding application
+repairs too. Use one qualified cumulative image; do not layer the historical
+host-mounted Python amendments over it.
+
+| Repair | Original symptom | Corrected behavior | Implementation |
+| --- | --- | --- | --- |
+| Native WebSocket burst buffering | A short consumer delay could abort a healthy stream after 64 decoded messages | Bound the decoded queue by both 4,096 events and 32 MiB, with acknowledgement progress and isolated overflow | [PR 1](https://github.com/tacodong/codex-lb/pull/1) |
+| Interrupted HTTP stream cleanup | An outer adapter could fail or close without finalizing its nested service generator | Cascade closure through the three response adapters so the owning service finalizers can release transport and leases | [PR 1](https://github.com/tacodong/codex-lb/pull/1) |
+| Desktop encrypted-output compatibility | Codex 0.165's `output.encrypted_content` include was rejected before inference | Accept and forward that exact include while continuing to reject unknown values | [PR 1](https://github.com/tacodong/codex-lb/pull/1) |
+| Account-neutral socket failure handling | Generic transport errors could penalize a healthy account or enter unsafe replay handling | Preserve transport provenance and terminate ambiguous failures without an account penalty or transparent replay | [PR 1](https://github.com/tacodong/codex-lb/pull/1), extended by [PR 2](https://github.com/tacodong/codex-lb/pull/2) |
+| Safe native failure reasons | A generic receive-failed message hid resets, EOF and missing close handshakes | Carry fixed validated phase/reason codes through Rust, Python and existing request-error evidence | [PR 2](https://github.com/tacodong/codex-lb/pull/2) |
+| Scoped dependency hardening | Required audits rejected fixed vulnerabilities in the deployed beta.9 dependency set | Repair Python/Rust locks and required OS packages, rebuild the helper and qualify/scan the resulting image | [PR 1](https://github.com/tacodong/codex-lb/pull/1) |
+| SQLite serving-only replicas and keyed authentication | A second full startup could conflict with the primary SQLite lifecycle; replacing the primary would interrupt work | Start explicit ordinary/keyed serving factories beside the retained lifecycle owner, without primary-only startup work | [PR 1](https://github.com/tacodong/codex-lb/pull/1) |
+| Connection-preserving activation and rollback | Unqualified NAT rules could capture old flows, and deleting the last hook could retire translations | Route only new SYNs, replace rules atomically, retain earlier processes/hooks and advance boot ownership | [Host controller](https://github.com/tacodong/homelab/blob/main/scripts/fleet/codex_lb_serving.py) and [PR 2065](https://github.com/tacodong/homelab/pull/2065) |
+| Pending-auth pin rotation and peer-cache propagation | Revoked credentials could be selected repeatedly until their JWT expiry, including through stale bridge snapshots | Exclude pending-auth accounts, persist healthy movable-pin replacements and apply the policy to cache, warmup and capacity handling | [PR 3](https://github.com/tacodong/codex-lb/pull/3) |
+
+### Bounded buffering without blocking acknowledgements
+
+The native helper multiplexes responses and send acknowledgements. The repair
+uses the existing byte-counted queue for **decoded WebSocket messages**, not
+just the helper's outer event queue. Its 4,096-event and 32 MiB payload limits
+bound different kinds of pressure: many small frames and a few large frames.
+The pump must keep handling acknowledgements while received data is buffered;
+waiting on a full decoded queue would stall control-plane progress.
+
+A real overflow remains a bounded local `consumer_backpressure` failure,
+reported as `upstream_consumer_backpressure` to the relay. It is account-neutral,
+does not automatically replay, and does not abort an unrelated peer connection.
+Increasing an idle timeout would not repair this queue failure.
+
+Regression coverage is in `tests/unit/test_native_websocket_bursts.py`, including
+ordered small bursts, byte limits, acknowledgement progress, pending-send
+failure and peer isolation. Historical exact-image qualification delivered
+5,120 ordered frames across 20 persistent turns in raw and interpreted modes.
+That result is a bounded burst test, not a sustained-load or lifetime guarantee.
+The owning change is
+[bound-native-websocket-bursts](https://github.com/tacodong/codex-lb/tree/codex/stability-beta9-base/openspec/changes/archive/2026-10-29-bound-native-websocket-bursts).
+
+### Close the owned stream when an adapter exits
+
+The repaired adapters are public Responses normalization, reasoning-summary
+normalization and response-error conversion. A `finally`-owned close propagates
+transport failure, early consumer close and cancellation to the nested service
+stream. The service retains ownership of reservation settlement and lease
+release; the adapters do not introduce a second settlement authority.
+
+Public and Codex-native error behavior remains distinct. Tests verify the
+existing error contract as well as prompt finalization; hiding an error behind
+an HTTP 200 response would not be a valid cleanup fix. A client acceptance test
+must consume the stream through its completed terminal event.
+
+`tests/unit/test_responses_stream_cleanup.py` exercises the three adapters,
+including cancellation preservation. The
+[verification record](https://github.com/tacodong/codex-lb/blob/codex/stability-beta9-base/openspec/changes/archive/2026-10-29-close-interrupted-response-streams/verification.md)
+records the initial 222 affected-path checks and exact-image cleanup evidence.
+These were historical qualification results; documentation updates do not rerun
+live inference or replay an interrupted user's turn.
+
+### Accept the exact Desktop include, not arbitrary values
+
+The baseline beta.9 validator rejected `output.encrypted_content` requested by
+Codex 0.165 with an invalid-payload/include error before inference. The fix adds
+that literal to the allowed include values and forwards it unchanged alongside
+`reasoning.encrypted_content`. It does not decrypt output, rewrite conversation
+history, alter model selection or relax validation for unknown include values.
+
+`tests/unit/test_desktop_transport_compatibility.py` checks both preservation of
+the accepted values and rejection of an unknown value. Verify a real Desktop
+reply and continuation after deploying the image: schema acceptance alone does
+not prove that the affected client can finish its turn.
+
+### Keep socket failures separate from account failures
+
+The earlier native adapter reduced socket-I/O failures to a generic upstream
+error, losing the information the relay needed to avoid an account-health
+penalty and unsafe replay. The application-owned fix preserves that
+account-neutral classification through send and receive handling. Its network
+classification says where the failure was observed; it does not prove that the
+whole server lost connectivity. These send/receive classification repairs cover
+the native WebSocket path; HTTP body failures retain their client-specific
+handling.
+
+The later native helper change adds optional fixed reasons such as
+`connection_reset`, `unexpected_eof`, `broken_pipe`, `pong_timeout` and
+`close_without_handshake`. Python validates an allowlist. Missing or unknown
+reasons from an older helper retain generic behavior; the new diagnostic never
+appends raw exceptions, URLs, credentials, headers or provider bodies.
+
+A real abrupt peer EOF reproduced `protocol/close_without_handshake`. That
+specific reason, plus `connection_closed`, now uses the existing terminal,
+account-neutral no-replay path. Other protocol failures retain their existing
+classification. The regression reproduced a replay count of one before the
+correction, then verified zero replay, no health penalty and reservation release
+through the service path afterward.
+
+Relevant coverage includes `tests/unit/test_desktop_transport_compatibility.py`,
+`tests/unit/test_native_websocket_bursts.py`, the relay regressions in
+`tests/unit/test_proxy_utils.py`, and
+`crates/codex-lb-egress-worker/tests/websocket_protocol.rs`. The helper tests cover
+actual peer termination, missing pong, wire compatibility and credential-safe
+reason emission. The owning change is
+[preserve-native-websocket-failure-reasons](https://github.com/tacodong/codex-lb/tree/codex/stability-beta9-base/openspec/changes/archive/2026-10-30-preserve-native-websocket-failure-reasons).
+
+### Rebuild and scan the dependency boundary
+
+The stability release repaired Python HTTP, DNS, decompression and certificate
+packages (`aiohttp`, `yarl`, `dnspython`, `urllib3`, `brotli` and `certifi`), scoped
+Rust TLS/async-I/O/decompression dependencies, and required pcre2/OpenSSL OS
+packages. The locks and `scripts/Dockerfile.stability` own the exact versions.
+This was scoped hardening of the qualified beta.9 runtime, rather than an
+unrelated application, dashboard or database-schema upgrade.
+
+The native binary must be rebuilt against its repaired lock. Merely editing a
+lock while copying an old binary into the image would leave that dependency
+boundary unqualified. The trusted stability workflow builds ARM64, scans fixed
+High/Critical findings and publishes a source-SHA artifact; publication itself
+does not deploy. A passed scan describes the artifact, scanner database and
+policy at that time, not a permanent security guarantee.
+
+Use the
+[dependency repair record](https://github.com/tacodong/codex-lb/tree/codex/stability-beta9-base/openspec/changes/archive/2026-10-29-patch-stability-runtime-dependencies)
+and the reproducible-artifact steps below. Preserve failed audit gates rather
+than making a candidate pass by disabling them.
+
+### Retain one SQLite lifecycle owner
+
+The explicit factories are `app.main:create_serving_replica_app` and
+`app.main:create_keyed_serving_replica_app`. They require an existing, actively
+owned local SQLite store. They do not run migrations, bootstrap an empty store,
+purge shared startup history, start singleton jobs or write the primary's
+clean-shutdown marker. They retain native serving, cache invalidation,
+persistence and process-local flush/settlement work.
+
+The ordinary factory follows the native global authentication policy. The keyed
+factory requires a key for both HTTP and WebSocket without flipping that shared
+global setting. Give each serving replica its own bridge identity and distinct
+port through the native controller. Keep the primary alive; a serving replica
+is neither automatic primary takeover nor a new-install bootstrap command.
+
+Coverage lives in `tests/unit/test_serving_replica.py` and
+`tests/integration/test_serving_replica.py`. Historical two-process qualification
+kept the primary's connection, lifecycle marker and owner lock intact while a
+replica stopped, and verified a conversation across the old/new process boundary.
+The owning change is
+[serve-with-existing-sqlite-owner](https://github.com/tacodong/codex-lb/tree/codex/stability-beta9-base/openspec/changes/archive/2026-10-29-serve-with-existing-sqlite-owner).
+Use the upgrade and rollback procedure below for the separate network-routing
+boundary; do not replace the primary to activate this serving role.
+
 ## Start with the failing request
 
 A client's “Reconnecting” or “error decoding response body” message is a symptom,
