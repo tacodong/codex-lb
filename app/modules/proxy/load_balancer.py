@@ -1736,9 +1736,8 @@ class LoadBalancer:
         effect). When the guarded status write MISSES because a peer replica
         concurrently re-authed/imported and rotated ``refresh_token_encrypted``
         (the DB row was repaired and left ACTIVE), the account keeps its
-        repaired state. A landed DEACTIVATED downgrade is excluded from local
-        routing; REAUTH_REQUIRED remains request-routable with its stored access
-        token while still blocking future refresh-token exchange.
+        repaired state. A landed pending-auth or deactivated downgrade excludes
+        local routing until a committed repair returns it to Active.
         """
         lock = await self._get_account_lock(account.id)
         async with lock:
@@ -1768,7 +1767,7 @@ class LoadBalancer:
                     state,
                     expected_refresh_token_encrypted=account.refresh_token_encrypted,
                 )
-            if downgraded and state.status == AccountStatus.DEACTIVATED:
+            if downgraded and state.status in (AccountStatus.DEACTIVATED, AccountStatus.REAUTH_REQUIRED):
                 mark_account_routing_unavailable(account.id)
             self._selection_inputs_cache.invalidate()
             return downgraded

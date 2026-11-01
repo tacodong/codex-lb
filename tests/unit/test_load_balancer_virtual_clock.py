@@ -77,7 +77,7 @@ def _additional_usage(
     )
 
 
-def test_all_accounts_require_reauthentication_uses_the_caller_clock_sample(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_all_accounts_require_reauthentication_ignores_unexpired_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
     encryptor = TokenEncryptor()
     clock = VirtualClock(epoch_value=2_000_000_000.0)
     expired = _account("expired", encryptor=encryptor, expires_at=int(clock.time()) - 1)
@@ -85,7 +85,7 @@ def test_all_accounts_require_reauthentication_uses_the_caller_clock_sample(monk
     _forbid_wall_clock(monkeypatch)
 
     assert all_accounts_require_reauthentication([expired], encryptor, now=clock.time()) is True
-    assert all_accounts_require_reauthentication([expired, still_valid], encryptor, now=clock.time()) is False
+    assert all_accounts_require_reauthentication([expired, still_valid], encryptor, now=clock.time()) is True
     assert all_accounts_require_reauthentication([], encryptor, now=clock.time()) is False
     clock.advance(3600.0)
     assert all_accounts_require_reauthentication([expired, still_valid], encryptor, now=clock.time()) is True

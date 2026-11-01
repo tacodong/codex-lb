@@ -114,3 +114,14 @@ def test_http_bridge_rejects_pending_reauth_session(expiry: float | None) -> Non
     )
 
     assert not _http_bridge_session_account_active(cast(Any, session))
+
+
+def test_warmup_skips_pending_auth_accounts() -> None:
+    from app.modules.proxy._service.warmup import _WarmupMixin
+
+    accounts = [
+        SimpleNamespace(id="failed", status=AccountStatus.REAUTH_REQUIRED),
+        SimpleNamespace(id="healthy", status=AccountStatus.ACTIVE),
+    ]
+    targets = _WarmupMixin()._resolve_warmup_target_accounts(cast(Any, accounts), api_key=None)
+    assert [target.id for target in targets] == ["healthy"]

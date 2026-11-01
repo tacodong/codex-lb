@@ -876,6 +876,17 @@ The system MUST exclude `reauth_required` accounts from new request selection an
 - **WHEN** native reauthentication makes the account Active
 - **THEN** it is eligible under the unchanged model, quota and account-scope policy
 
+
+#### Scenario: Peer authentication failure invalidates a stale bridge
+- **GIVEN** a live bridge retains an Active account snapshot
+- **WHEN** another replica commits `reauth_required` and the routing cache refreshes
+- **THEN** bridge reuse is refused until a committed Active repair clears the unavailable marker
+
+#### Scenario: Pending authentication is not a capacity wait
+- **GIVEN** the only scoped account requires reauthentication and has full concurrency counters
+- **THEN** selection reports reauthentication rather than a retryable capacity failure
+- **AND** proxy warmup does not submit requests to that account
+
 ### Requirement: Overload rejections deprioritize the account for fresh selection
 
 When upstream rejects a fresh admission for an account as overloaded

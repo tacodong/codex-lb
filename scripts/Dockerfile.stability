@@ -41,3 +41,7 @@ COPY --chown=app:app app/core/balancer/logic.py /app/app/core/balancer/logic.py
 COPY --chown=app:app app/modules/proxy/account_eligibility.py /app/app/modules/proxy/account_eligibility.py
 COPY --chown=app:app app/modules/proxy/_load_balancer/sticky_selection.py /app/app/modules/proxy/_load_balancer/sticky_selection.py
 COPY --chown=app:app app/modules/proxy/_service/http_bridge/helpers.py /app/app/modules/proxy/_service/http_bridge/helpers.py
+COPY --chown=app:app app/modules/proxy/account_cache.py app/modules/proxy/load_balancer.py /app/app/modules/proxy/
+COPY --chown=app:app app/modules/accounts/auth_manager.py /app/app/modules/accounts/auth_manager.py
+COPY --chown=app:app app/modules/proxy/_service/warmup.py /app/app/modules/proxy/_service/warmup.py
+COPY --chown=app:app app/modules/proxy/_load_balancer/unbound_selection.py /app/app/modules/proxy/_load_balancer/unbound_selection.py
