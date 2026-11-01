@@ -8,6 +8,12 @@ codex-lb refreshes usage on its own schedule and treats upstream samples conserv
 
 ## Streaming
 
+**Repeated reconnects, unavailable account owners, or truncated response bodies.**
+Use the [reliability guide](reliability.md) to distinguish authentication failure
+from upstream transport closure, verify movable-pin failover, and qualify a
+connection-preserving upgrade. It describes the downstream stability branch and
+links its owning specifications and implementation PRs.
+
 **Codex CLI falls back to POST instead of WebSockets.**
 Run the [WebSocket verification steps](client-setup.md#verify-websocket-transport). If codex-lb sits behind a reverse proxy, make sure it forwards WebSocket upgrades — see [Remote Access](deployment/remote.md).
 
