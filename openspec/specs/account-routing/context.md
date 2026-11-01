@@ -178,3 +178,8 @@ short windows, or evaluated for a quota the plan does not have.
 Settlement is discarded if newer replica-local runtime activity arrives while
 that snapshot is loading, preventing an older probe success from clearing a
 later failure.
+
+
+## Pending-auth pin failover
+
+DX repeatedly retried revoked credentials while their JWT expiry remained in the future. Pending reauthentication now excludes those accounts from request selection and live bridge reuse. Existing sticky-thread/cache selection rebinds movable pins to eligible accounts. Existing durable full-context proofs remain the only authority for moving stored-response ownership; file-bound state and ambiguously accepted work do not replay. Native reauthentication returns the account to Active without manual status or credential edits. Example: a soft pin on pending accountA selects healthy accountB even when A's JWT claims another day of validity.

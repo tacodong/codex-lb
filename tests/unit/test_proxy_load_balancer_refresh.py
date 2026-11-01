@@ -1949,8 +1949,8 @@ async def test_select_account_skips_stale_persistence_after_terminal_status_upda
     selection = await select_task
 
     assert accounts_repo.status_updates[-1]["status"] == AccountStatus.REAUTH_REQUIRED
-    assert selection.account is not None
-    assert selection.account.id == account.id
+    assert selection.account is None
+    assert selection.error_message == "All accounts require re-authentication"
 
 
 @pytest.mark.asyncio
@@ -1998,8 +1998,8 @@ async def test_select_account_retries_after_post_persist_permanent_failure(monke
     selection = await balancer.select_account()
 
     assert account.status == AccountStatus.REAUTH_REQUIRED
-    assert selection.account is not None
-    assert selection.account.id == account.id
+    assert selection.account is None
+    assert selection.error_message == "All accounts require re-authentication"
 
 
 @pytest.mark.asyncio

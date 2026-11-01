@@ -1908,7 +1908,7 @@ throttling and quota error codes MUST NOT request a refresh.
 - **WHEN** a stream on that account fails with `usage_limit_reached`
 - **THEN** no upstream usage fetch runs
 
-### Requirement: Permanent refresh failure preserves request eligibility
+### Requirement: Permanent refresh failure yields request eligibility to healthy accounts
 
 Permanent refresh credential or session errors MUST mark the account `reauth_required`. This requirement refines existing refresh-failure requirements: any instruction to remove that status from request routing, tear down affinity, or add a process-local unavailable overlay MUST defer to the canonical status matrix in `account-routing`. Proactive and background refresh MUST continue to skip known-bad refresh material.
 
@@ -1919,7 +1919,7 @@ A separate upstream account-deactivation signal MUST continue to mark the accoun
 - **WHEN** refresh-token exchange fails permanently without an account-deactivation signal
 - **THEN** the account becomes `reauth_required`
 - **AND** proactive refresh stops
-- **AND** ordinary requests may still use the stored access token
+- **AND** ordinary requests exclude the pending-auth account until native reauthentication restores Active status
 
 #### Scenario: Account deactivation remains hard-unavailable
 

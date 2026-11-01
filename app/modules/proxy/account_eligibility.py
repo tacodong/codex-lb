@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import time
 from collections.abc import Collection
 
 from app.core.auth import token_expiry_epoch_ms
 from app.core.crypto import TokenEncryptor
 from app.db.models import Account, AccountStatus
 
-ROUTABLE_STATUSES = (AccountStatus.ACTIVE, AccountStatus.REAUTH_REQUIRED)
-"""Statuses whose sessions keep serving requests (reauth stays routable until expiry)."""
+ROUTABLE_STATUSES = (AccountStatus.ACTIVE,)
+"""Statuses eligible for new requests and live bridge reuse."""
 
 HARD_OWNER_UNAVAILABLE_STATUSES = frozenset(
     {
@@ -21,13 +20,8 @@ HARD_OWNER_UNAVAILABLE_STATUSES = frozenset(
 )
 """Statuses a hard continuity owner can sit in while it cannot serve its thread.
 
-Usable directly in SQL, unlike :func:`reauth_access_token_is_expired`, which
-needs a decrypted token. ``REAUTH_REQUIRED`` belongs here only because every
-consumer pairs the set with a long inactivity grace: an owner that has been
-warning about reauthentication for hours without serving its thread is not
-coming back on its own, whatever its stored token claims. Anything deciding
-routability *now* must use :data:`ROUTABLE_STATUSES` plus the expiry check
-instead.
+Usable directly in SQL. Recovery still requires each caller's ownership and
+complete-history checks; this set never authorizes blind cross-account replay.
 """
 
 
@@ -52,36 +46,15 @@ def account_access_token_expires_at(account: Account, encryptor: TokenEncryptor)
     return stored_access_token_expires_at(encrypted_access_token, encryptor)
 
 
-def reauth_access_token_is_expired(
-    status: AccountStatus,
-    access_token_expires_at: float | None,
-    *,
-    now: float | None = None,
-) -> bool:
-    """Return whether a reauthentication-warning account is known unusable."""
-    return (
-        status == AccountStatus.REAUTH_REQUIRED
-        and access_token_expires_at is not None
-        and access_token_expires_at <= (time.time() if now is None else now)
-    )
-
-
 def all_accounts_require_reauthentication(
     accounts: Collection[Account],
     encryptor: TokenEncryptor,
     *,
     now: float,
 ) -> bool:
-    """Return whether every candidate is reauthentication-blocked by known expiry.
+    """Return whether every candidate requires new authentication.
 
-    ``now`` is the caller's epoch clock sample (the balancer passes
-    ``self._clock.time()``) so selection never mixes clock domains.
+    Keep the existing call contract; credential expiry no longer overrides a
+    persisted authentication failure.
     """
-    return bool(accounts) and all(
-        reauth_access_token_is_expired(
-            account.status,
-            account_access_token_expires_at(account, encryptor),
-            now=now,
-        )
-        for account in accounts
-    )
+    return bool(accounts) and all(account.status == AccountStatus.REAUTH_REQUIRED for account in accounts)

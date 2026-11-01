@@ -189,7 +189,7 @@ async def test_all_accounts_unavailable_does_not_overwrite_sticky():
 
 
 @pytest.mark.asyncio
-async def test_expired_reauth_sticky_owner_falls_back_without_rebinding_prompt_cache():
+async def test_reauth_sticky_owner_rebinds_prompt_cache():
     expired = AccountState(
         "a",
         AccountStatus.REAUTH_REQUIRED,
@@ -202,8 +202,23 @@ async def test_expired_reauth_sticky_owner_falls_back_without_rebinding_prompt_c
 
     assert result.account is not None
     assert result.account.account_id == "b"
-    repo.upsert.assert_not_called()
+    repo.upsert.assert_called_once_with("key1", "b", kind=StickySessionKind.PROMPT_CACHE)
     repo.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pending_reauth_thread_pin_rotates_before_token_expiry():
+    failed = AccountState("a", AccountStatus.REAUTH_REQUIRED, access_token_expires_at=time.time() + 86400)
+    repo = _make_sticky_repo(existing_account_id="a")
+    result = await _invoke_stickiness(
+        [failed, _active("b")],
+        "key1",
+        repo,
+        sticky_kind=StickySessionKind.STICKY_THREAD,
+        reallocate_sticky=True,
+    )
+    assert result.account is not None and result.account.account_id == "b"
+    repo.upsert.assert_called_once_with("key1", "b", kind=StickySessionKind.STICKY_THREAD)
 
 
 @pytest.mark.asyncio
@@ -729,8 +744,8 @@ async def test_paused_pinned_account_persists_fallback():
 
 
 @pytest.mark.asyncio
-async def test_reauth_required_pinned_account_preserves_owner():
-    """REAUTH_REQUIRED keeps the existing request-routable owner."""
+async def test_reauth_required_cache_owner_uses_healthy_fallback():
+    """An unusable cache preference cannot block a healthy account."""
     acc_a = AccountState("a", AccountStatus.REAUTH_REQUIRED, deactivation_reason="token expired")
     acc_b = _active("b")
     repo = _make_sticky_repo(existing_account_id="a")
@@ -743,8 +758,8 @@ async def test_reauth_required_pinned_account_preserves_owner():
     )
 
     assert result.account is not None
-    assert result.account.account_id == "a"
-    repo.upsert.assert_called_once_with("key1", "a", kind=StickySessionKind.PROMPT_CACHE)
+    assert result.account.account_id == "b"
+    repo.upsert.assert_called_once_with("key1", "b", kind=StickySessionKind.PROMPT_CACHE)
 
 
 # ---------------------------------------------------------------------------

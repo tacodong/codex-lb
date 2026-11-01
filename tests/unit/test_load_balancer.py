@@ -219,7 +219,7 @@ def test_select_account_prefers_burn_first_policy_before_usage():
 def test_select_account_preserves_accounts_until_no_others_are_available():
     states = [
         AccountState("review", AccountStatus.ACTIVE, used_percent=1.0, routing_policy="preserve"),
-        AccountState("normal", AccountStatus.REAUTH_REQUIRED, used_percent=95.0, routing_policy="normal"),
+        AccountState("normal", AccountStatus.ACTIVE, used_percent=95.0, routing_policy="normal"),
     ]
 
     result = select_account(states, routing_strategy="usage_weighted")
@@ -2213,8 +2213,8 @@ def test_requested_limit_relative_availability_uses_requested_reset_window():
     assert result.account.account_id == "ordinary-late-requested-soon"
 
 
-def test_bypass_quota_exceeded_keeps_reauth_request_routable():
-    """Reauth remains selectable while paused and deactivated stay blocked."""
+def test_bypass_quota_exceeded_does_not_bypass_authentication():
+    """Quota bypass cannot make a pending-auth account eligible."""
     now = 1_700_000_000.0
     paused = AccountState("p", AccountStatus.PAUSED, used_percent=5.0)
     reauth = AccountState("r", AccountStatus.REAUTH_REQUIRED, used_percent=5.0)
@@ -2223,7 +2223,7 @@ def test_bypass_quota_exceeded_keeps_reauth_request_routable():
 
     result = select_account([paused, reauth, deactivated, quota], now=now, bypass_quota_exceeded=True)
     assert result.account is not None
-    assert result.account.account_id == "r"
+    assert result.account.account_id == "q"
 
 
 def _make_test_account(
