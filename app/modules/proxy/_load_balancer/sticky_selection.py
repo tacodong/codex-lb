@@ -63,7 +63,6 @@ _STICKY_EXISTING_UNSET = object()
 _RECOVERABLE_STATUSES = frozenset(
     {
         AccountStatus.ACTIVE,
-        AccountStatus.REAUTH_REQUIRED,
         AccountStatus.RATE_LIMITED,
         AccountStatus.QUOTA_EXCEEDED,
     }
@@ -927,9 +926,7 @@ async def run_sticky_selection_path(
                         and lease_kind is not None
                         and len(selection_states) < len(states)
                         and any(
-                            state.status in (AccountStatus.ACTIVE, AccountStatus.REAUTH_REQUIRED)
-                            for state in states
-                            if state not in selection_states
+                            state.status == AccountStatus.ACTIVE for state in states if state not in selection_states
                         )
                     ):
                         selection_error_code = _account_cap_error_code(lease_kind)
@@ -2102,6 +2099,10 @@ def _filter_states_for_account_caps(
         return list(states)
     filtered: list[AccountState] = []
     for state in states:
+        if state.status == AccountStatus.REAUTH_REQUIRED:
+            # Let selection report authentication instead of a capacity wait.
+            filtered.append(state)
+            continue
         if lease_kind == "response_create":
             cap = caps.response_create_limit
             if cap > 0 and state.inflight_response_creates >= cap:

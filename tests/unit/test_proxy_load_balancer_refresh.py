@@ -1706,7 +1706,7 @@ async def test_record_errors_does_not_restore_terminal_status(monkeypatch) -> No
 
 
 @pytest.mark.asyncio
-async def test_mark_reauth_failure_keeps_account_routing_available() -> None:
+async def test_mark_reauth_failure_propagates_routing_unavailability() -> None:
     account = _make_account("acc-reauth-routing-available", "reauth-routing@example.com")
     accounts_repo = StubAccountsRepository([account])
     usage_repo = StubUsageRepository(primary={}, secondary={})
@@ -1716,7 +1716,7 @@ async def test_mark_reauth_failure_keeps_account_routing_available() -> None:
     await balancer.mark_permanent_failure(account, "refresh_token_expired")
 
     assert account.status == AccountStatus.REAUTH_REQUIRED
-    assert is_account_routing_unavailable(account.id) is False
+    assert is_account_routing_unavailable(account.id) is True
 
 
 @pytest.mark.asyncio
@@ -1949,8 +1949,8 @@ async def test_select_account_skips_stale_persistence_after_terminal_status_upda
     selection = await select_task
 
     assert accounts_repo.status_updates[-1]["status"] == AccountStatus.REAUTH_REQUIRED
-    assert selection.account is not None
-    assert selection.account.id == account.id
+    assert selection.account is None
+    assert selection.error_message == "All accounts require re-authentication"
 
 
 @pytest.mark.asyncio
@@ -1998,8 +1998,8 @@ async def test_select_account_retries_after_post_persist_permanent_failure(monke
     selection = await balancer.select_account()
 
     assert account.status == AccountStatus.REAUTH_REQUIRED
-    assert selection.account is not None
-    assert selection.account.id == account.id
+    assert selection.account is None
+    assert selection.error_message == "All accounts require re-authentication"
 
 
 @pytest.mark.asyncio
@@ -4078,7 +4078,7 @@ async def test_mark_permanent_failure_skips_routing_exclusion_on_peer_rotation()
 
 
 @pytest.mark.asyncio
-async def test_mark_reauth_failure_does_not_exclude_routing_on_genuine_failure() -> None:
+async def test_mark_reauth_failure_excludes_routing_on_genuine_failure() -> None:
     account = _make_account("acc-perm-routing-genuine")
     account.status = AccountStatus.ACTIVE
 
@@ -4091,7 +4091,7 @@ async def test_mark_reauth_failure_does_not_exclude_routing_on_genuine_failure()
 
     assert downgraded is True
     assert account.status == AccountStatus.REAUTH_REQUIRED
-    assert is_account_routing_unavailable(account.id) is False
+    assert is_account_routing_unavailable(account.id) is True
 
 
 @pytest.mark.asyncio

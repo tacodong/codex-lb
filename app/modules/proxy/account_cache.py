@@ -92,6 +92,7 @@ _ROUTING_UNAVAILABLE_STATUSES = frozenset(
     {
         AccountStatus.PAUSED,
         AccountStatus.DEACTIVATED,
+        AccountStatus.REAUTH_REQUIRED,
     }
 )
 
@@ -101,7 +102,7 @@ class RoutingAvailabilityCache:
 
     The cache keeps a snapshot of committed account statuses (``{account_id: status}``)
     seeded at poller start and rebuilt on every ``account_routing`` bump. An account is
-    routing-unavailable when its committed status is PAUSED / DEACTIVATED, or the id
+    routing-unavailable when its committed status is PAUSED / DEACTIVATED / REAUTH_REQUIRED, or the id
     is absent from the snapshot (deleted), or a local mark
     overlay entry exists (covering the same-replica window between a mark and the
     snapshot rebuild). RATE_LIMITED and QUOTA_EXCEEDED deliberately do NOT map to

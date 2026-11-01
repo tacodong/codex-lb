@@ -63,14 +63,15 @@ def test_build_states_carries_reauth_access_token_expiry() -> None:
     assert states[0].access_token_expires_at == 1_700_000_123.0
 
 
-def test_selection_skips_expired_reauth_account() -> None:
+@pytest.mark.parametrize("expiry", [None, 1_700_000_000.0, 1_800_000_000.0])
+def test_selection_skips_pending_reauth_account(expiry: float | None) -> None:
     now = 1_700_000_000.0
     states = [
         AccountState(
             "expired",
             AccountStatus.REAUTH_REQUIRED,
             used_percent=1.0,
-            access_token_expires_at=now,
+            access_token_expires_at=expiry,
         ),
         AccountState("active", AccountStatus.ACTIVE, used_percent=50.0),
     ]
@@ -102,13 +103,25 @@ def test_all_expired_reauth_accounts_report_reauthentication() -> None:
     assert result.error_message == "All accounts require re-authentication"
 
 
-def test_http_bridge_rejects_expired_reauth_session() -> None:
+@pytest.mark.parametrize("expiry", [None, 0.0, 9_999_999_999.0])
+def test_http_bridge_rejects_pending_reauth_session(expiry: float | None) -> None:
     session = SimpleNamespace(
         account=SimpleNamespace(
             id="expired-bridge-owner",
             status=AccountStatus.REAUTH_REQUIRED,
         ),
-        access_token_expires_at=0.0,
+        access_token_expires_at=expiry,
     )
 
     assert not _http_bridge_session_account_active(cast(Any, session))
+
+
+def test_warmup_skips_pending_auth_accounts() -> None:
+    from app.modules.proxy._service.warmup import _WarmupMixin
+
+    accounts = [
+        SimpleNamespace(id="failed", status=AccountStatus.REAUTH_REQUIRED),
+        SimpleNamespace(id="healthy", status=AccountStatus.ACTIVE),
+    ]
+    targets = _WarmupMixin()._resolve_warmup_target_accounts(cast(Any, accounts), api_key=None)
+    assert [target.id for target in targets] == ["healthy"]

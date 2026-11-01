@@ -3307,7 +3307,7 @@ async def test_security_work_excluded_prompt_cache_owner_is_rebound() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "owner_status",
-    [AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED, AccountStatus.REAUTH_REQUIRED],
+    [AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED],
 )
 async def test_excluded_prompt_cache_owner_with_recoverable_status_is_preserved(
     owner_status: AccountStatus,
@@ -5587,3 +5587,18 @@ async def test_shared_owner_lookup_session_reads_each_owner_key_exactly_once() -
     # session-per-lookup flow would have recorded three distinct ids here.
     assert len(lookup_context_ids) == 1
     assert None not in lookup_context_ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sticky", [False, True])
+async def test_capped_pending_auth_account_reports_authentication_not_capacity(sticky: bool) -> None:
+    balancer, owner, _alternate, sticky_repo = _make_cap_spillover_balancer("pending-capped", include_alternate=False)
+    owner.status = AccountStatus.REAUTH_REQUIRED
+    key = "pending-auth-thread"
+    sticky_repo.account_ids_by_key = {key: owner.id}
+    balancer._runtime[owner.id] = load_balancer_module.RuntimeState(inflight_streams=1000)
+    kwargs = _thread_row_kwargs(key, lease_kind="stream") if sticky else {"lease_kind": "stream"}
+    selected = await balancer.select_account(**kwargs)
+    assert selected.account is None
+    assert selected.error_code not in {"account_stream_cap", "account_response_create_cap"}
+    assert "re-authentication" in (selected.error_message or "")

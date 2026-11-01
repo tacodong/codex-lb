@@ -856,71 +856,36 @@ credentials.
 - **AND** the account is not selected for subsequent routed requests until fresh
   credentials are supplied
 
-### Requirement: Re-authentication-required accounts remain request-routable
+### Requirement: Pending-auth account pins yield to eligible accounts
+The system MUST exclude `reauth_required` accounts from new request selection and live HTTP-bridge reuse, including when a stored JWT has not expired. Native reauthentication MUST restore eligibility when the account becomes Active. A pending status MUST NOT be cleared by routing recovery or by rewriting credentials.
 
-The system MUST distinguish request routability from refresh-token eligibility. `active` accounts MUST be request-routable. A `reauth_required` account MUST remain request-routable only while its stored access token is not known to be expired; paused and deactivated accounts MUST remain excluded.
+#### Scenario: Failed soft-pin owner has an unexpired JWT
+- **GIVEN** a soft pin points to a `reauth_required` account and another eligible account exists
+- **WHEN** a new request selects an account
+- **THEN** the request selects an eligible replacement through the existing soft-affinity path
+- **AND** the pending account receives no upstream request
 
-This status baseline is canonical for proxy selection, owner-bound affinity, warmup, automations, API-key account pools and scopes, probes, access-token-authenticated usage and reset-credit operations, and dashboard projections of routable capacity. Capability-specific references to active, eligible, or hard-unavailable accounts MUST apply this baseline unless a stricter credential-expiry, security, ownership, model, quota, cooldown, or operator-policy gate is explicitly required.
+#### Scenario: Account-owned state cannot be rebuilt
+- **GIVEN** a request depends on an unavailable account's file or stored response
+- **AND** the existing complete-history recovery proof does not hold
+- **THEN** the system preserves the hard ownership boundary and fails without replaying the request on another account
 
-Selecting a routable `reauth_required` account MUST use its stored access token without proactive refresh-token exchange. Its sticky, bridge, file, response, and realtime ownership MUST remain bound while that token is unexpired. Once a known access-token expiry is reached, new proxy selection and live bridge reuse MUST stop before upstream I/O. Movable soft affinity MAY fail over, while hard account-owned continuity MUST remain fail-closed rather than crossing accounts.
 
-A permanent forced-refresh failure while serving a movable request MUST release the account's lease and exclude it from that request's remaining attempts. The failure MUST NOT create a process-wide routing block before the stored access token's known expiry.
+#### Scenario: Repaired account returns to service
+- **GIVEN** an account was excluded while reauthentication was pending
+- **WHEN** native reauthentication makes the account Active
+- **THEN** it is eligible under the unchanged model, quota and account-scope policy
 
-#### Scenario: Token-invalidated account remains in the pool
 
-- **GIVEN** account A is `reauth_required` with a usable stored access token
-- **WHEN** an ordinary proxy or supporting access-token operation selects an account
-- **THEN** account A remains eligible after all other applicable gates
-- **AND** its refresh token is not proactively exchanged
+#### Scenario: Peer authentication failure invalidates a stale bridge
+- **GIVEN** a live bridge retains an Active account snapshot
+- **WHEN** another replica commits `reauth_required` and the routing cache refreshes
+- **THEN** bridge reuse is refused until a committed Active repair clears the unavailable marker
 
-#### Scenario: Warning state preserves ownership
-
-- **GIVEN** account A owns sticky or hard continuity
-- **WHEN** account A becomes `reauth_required` with an unexpired stored access token
-- **THEN** the ownership remains bound to account A
-- **AND** the transition alone does not delete or rebind continuity
-
-#### Scenario: Expired warning account is quiesced locally
-
-- **GIVEN** account A is `reauth_required`
-- **AND** its stored access token has reached its known expiry
-- **WHEN** a new proxy request selects an account or considers bridge reuse
-- **THEN** account A is rejected before upstream I/O
-- **AND** hard account-owned continuity does not move to another account
-
-#### Scenario: All expired warning accounts report reauthentication
-
-- **GIVEN** every otherwise scoped account is `reauth_required` with a known-expired access token
-- **AND** an additional-quota evidence gate would otherwise reject those accounts first
-- **WHEN** account selection runs
-- **THEN** selection fails with an explicit message that all accounts require reauthentication
-
-#### Scenario: Current request excludes a rejected warning account
-
-- **GIVEN** a movable request selected account A
-- **AND** forced refresh fails permanently after upstream rejects A's access token
-- **WHEN** the request retries selection
-- **THEN** account A is excluded from that request's remaining attempts
-- **AND** account A may still be considered by a later independent request
-
-#### Scenario: Request-routable account can be selected for scoped routing
-
-- **GIVEN** account A is `reauth_required`
-- **WHEN** an operator opens a scoped account-routing picker
-- **THEN** account A is offered as selectable
-
-#### Scenario: Hard-blocked account cannot be newly selected for scoped routing
-
-- **GIVEN** account A is paused or deactivated
-- **WHEN** any routing strategy or account-scoped picker evaluates account A
-- **THEN** account A is not selectable
-
-#### Scenario: Re-authentication-required account cannot be paused into resumable state
-
-- **GIVEN** account A is `reauth_required`
-- **WHEN** an operator attempts to pause account A
-- **THEN** the request is rejected
-- **AND** account A remains `reauth_required`
+#### Scenario: Pending authentication is not a capacity wait
+- **GIVEN** the only scoped account requires reauthentication and has full concurrency counters
+- **THEN** selection reports reauthentication rather than a retryable capacity failure
+- **AND** proxy warmup does not submit requests to that account
 
 ### Requirement: Overload rejections deprioritize the account for fresh selection
 
