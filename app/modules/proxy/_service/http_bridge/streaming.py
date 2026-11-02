@@ -2260,6 +2260,7 @@ class _HTTPBridgeStreamingMixin:
             this account, and dropping it here would silently change what the
             client asked for.
             """
+            nonlocal affinity
             nonlocal durable_lookup
             nonlocal effective_payload
             nonlocal owner_retirement_attempted
@@ -2308,11 +2309,15 @@ class _HTTPBridgeStreamingMixin:
             # retired owner could resolve. ``untrimmed_effective_payload`` is
             # the pre-trim copy the other anchor-free retries already use.
             effective_payload = _http_bridge_payload_without_previous_response_id(untrimmed_effective_payload)
+            if affinity.kind is not None:
+                affinity = dataclasses.replace(affinity, reallocate_sticky=True)
             request_state, text_data = prepare_bridge_request(effective_payload)
             request_state.enforce_openai_sdk_contract = enforce_openai_sdk_contract
             request_state.affinity_policy = affinity
             request_state.transport = _REQUEST_TRANSPORT_HTTP
             request_state.preferred_account_id = None
+            request_state.excluded_account_ids.add(retiring_account_id)
+            fresh_replay_excluded_account_ids.add(retiring_account_id)
             if downstream_turn_state is not None:
                 request_state.session_id = _normalize_session_id(downstream_turn_state)
             preferred_account_has_continuity_provenance = False

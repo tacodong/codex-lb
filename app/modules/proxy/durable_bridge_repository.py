@@ -33,6 +33,7 @@ from app.db.models import (
     HttpBridgeSessionAlias,
     HttpBridgeSessionRecord,
     HttpBridgeSessionState,
+    UsageHistory,
 )
 from app.db.session import sqlite_writer_section
 from app.modules.proxy.account_eligibility import HARD_OWNER_UNAVAILABLE_STATUSES
@@ -3602,10 +3603,45 @@ class DurableBridgeRepository:
         owner_status_lock = (
             select(Account.status, Account.reset_at).where(Account.id == expected_account_id).with_for_update()
         )
+        latest_primary_usage_id = (
+            select(UsageHistory.id)
+            .where(
+                UsageHistory.account_id == expected_account_id,
+                or_(UsageHistory.window == "primary", UsageHistory.window.is_(None)),
+            )
+            .order_by(UsageHistory.recorded_at.desc(), UsageHistory.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        latest_secondary_usage_id = (
+            select(UsageHistory.id)
+            .where(
+                UsageHistory.account_id == expected_account_id,
+                UsageHistory.window == "secondary",
+            )
+            .order_by(UsageHistory.recorded_at.desc(), UsageHistory.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        exhausted_usage_window_exists = select(UsageHistory.id).where(
+            UsageHistory.id.in_((latest_primary_usage_id, latest_secondary_usage_id)),
+            UsageHistory.used_percent >= 100.0,
+            or_(UsageHistory.reset_at.is_(None), UsageHistory.reset_at >= recovery_deadline_epoch),
+        )
         unavailable_owner = select(Account.id).where(
             Account.id == expected_account_id,
-            Account.status.in_(HARD_OWNER_UNAVAILABLE_STATUSES),
-            or_(Account.reset_at.is_(None), Account.reset_at >= recovery_deadline_epoch),
+            or_(
+                and_(
+                    Account.status.in_(HARD_OWNER_UNAVAILABLE_STATUSES),
+                    or_(Account.reset_at.is_(None), Account.reset_at >= recovery_deadline_epoch),
+                ),
+                exists(exhausted_usage_window_exists),
+            ),
+        )
+        unanchored_closed_session = and_(
+            HttpBridgeSessionRecord.state == HttpBridgeSessionState.CLOSED,
+            HttpBridgeSessionRecord.latest_response_id.is_(None),
+            HttpBridgeSessionRecord.latest_turn_state.is_(None),
         )
         statement = (
             update(HttpBridgeSessionRecord)
@@ -3614,18 +3650,25 @@ class DurableBridgeRepository:
                 HttpBridgeSessionRecord.account_id == expected_account_id,
                 HttpBridgeSessionRecord.continuity_abandoned_at.is_(None),
                 HttpBridgeSessionRecord.continuity_abandonment_scope.is_(None),
-                HttpBridgeSessionRecord.account_id.in_(unavailable_owner),
+                or_(
+                    HttpBridgeSessionRecord.account_id.in_(unavailable_owner),
+                    unanchored_closed_session,
+                ),
             )
             .values(continuity_abandonment_scope=_REQUEST_PATH_ABANDONMENT_SCOPE)
             .returning(HttpBridgeSessionRecord.id)
         )
         async with sqlite_writer_section():
             locked = (await self._session.execute(owner_status_lock)).one_or_none()
-            if locked is None or locked[0] not in HARD_OWNER_UNAVAILABLE_STATUSES:
+            if locked is None:
                 await self._session.commit()
                 return False
-            owner_reset_at = locked[1]
-            if owner_reset_at is not None and owner_reset_at < recovery_deadline_epoch:
+            owner_status, owner_reset_at = locked[0], locked[1]
+            if (
+                owner_status in HARD_OWNER_UNAVAILABLE_STATUSES
+                and owner_reset_at is not None
+                and owner_reset_at < recovery_deadline_epoch
+            ):
                 # The owner is expected back inside the window the caller is
                 # willing to wait, so waiting keeps the upstream prompt cache
                 # instead of forcing a full resend onto another account.
