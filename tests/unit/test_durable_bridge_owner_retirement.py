@@ -15,6 +15,8 @@ from app.db.models import (
     HttpBridgeOperationRecord,
     HttpBridgeSessionAlias,
     HttpBridgeSessionRecord,
+    HttpBridgeSessionState,
+    UsageHistory,
 )
 from app.modules.proxy.account_eligibility import HARD_OWNER_UNAVAILABLE_STATUSES
 from app.modules.proxy.durable_bridge_coordinator import DurableBridgeSessionCoordinator
@@ -600,6 +602,101 @@ async def test_request_path_never_retires_a_healthy_owner(
         account_id="acc-active",
         deadline_epoch=_epoch_in(7200),
     )
+
+
+async def test_request_path_retires_active_owner_with_exhausted_usage_window_past_budget(
+    async_session_factory: Callable[[], AsyncSession],
+    coordinator: DurableBridgeSessionCoordinator,
+) -> None:
+    """An ACTIVE account whose latest usage window is 100% exhausted past the deadline is retired."""
+    await _add_account(async_session_factory, "acc-exhausted", AccountStatus.ACTIVE)
+    async with async_session_factory() as session:
+        session.add(
+            UsageHistory(
+                account_id="acc-exhausted",
+                recorded_at=to_utc_naive(utcnow()),
+                window="primary",
+                used_percent=100.0,
+                reset_at=_epoch_in(4 * 3600),
+                window_minutes=300,
+            )
+        )
+        await session.commit()
+    session_id = await _claim(coordinator, account_id="acc-exhausted")
+
+    assert await _retire_now(
+        async_session_factory,
+        session_id=session_id,
+        account_id="acc-exhausted",
+        deadline_epoch=_epoch_in(7200),
+    )
+
+    lookup = await _lookup(coordinator)
+    assert lookup is not None
+    assert lookup.continuity_abandoned is True
+    assert lookup.account_id is None
+    assert lookup.retired_account_id == "acc-exhausted"
+
+
+async def test_request_path_waits_for_active_owner_with_exhausted_usage_window_inside_budget(
+    async_session_factory: Callable[[], AsyncSession],
+    coordinator: DurableBridgeSessionCoordinator,
+) -> None:
+    """An exhausted usage window resetting inside the request budget is not retired early."""
+    await _add_account(async_session_factory, "acc-exhausted-soon", AccountStatus.ACTIVE)
+    async with async_session_factory() as session:
+        session.add(
+            UsageHistory(
+                account_id="acc-exhausted-soon",
+                recorded_at=to_utc_naive(utcnow()),
+                window="primary",
+                used_percent=100.0,
+                reset_at=_epoch_in(60),
+                window_minutes=300,
+            )
+        )
+        await session.commit()
+    session_id = await _claim(coordinator, account_id="acc-exhausted-soon")
+
+    assert not await _retire_now(
+        async_session_factory,
+        session_id=session_id,
+        account_id="acc-exhausted-soon",
+        deadline_epoch=_epoch_in(7200),
+    )
+
+
+async def test_request_path_retires_closed_unanchored_session_owner(
+    async_session_factory: Callable[[], AsyncSession],
+    coordinator: DurableBridgeSessionCoordinator,
+) -> None:
+    """A closed session row with no response or turn-state anchor drops no continuity when retired."""
+    await _add_account(async_session_factory, "acc-unanchored", AccountStatus.ACTIVE)
+    session_id = await _claim(coordinator, account_id="acc-unanchored", latest_response_id=None)
+    async with async_session_factory() as session:
+        await session.execute(
+            update(HttpBridgeSessionRecord)
+            .where(HttpBridgeSessionRecord.id == session_id)
+            .values(
+                state=HttpBridgeSessionState.CLOSED,
+                latest_response_id=None,
+                latest_turn_state=None,
+            )
+        )
+        await session.commit()
+
+    assert await _retire_now(
+        async_session_factory,
+        session_id=session_id,
+        account_id="acc-unanchored",
+        deadline_epoch=_epoch_in(7200),
+    )
+
+    lookup = await _lookup(coordinator)
+    assert lookup is not None
+    assert lookup.continuity_abandoned is True
+    assert lookup.account_id is None
+    assert lookup.retired_account_id == "acc-unanchored"
 
 
 async def test_request_path_retirement_requires_the_expected_owner(
