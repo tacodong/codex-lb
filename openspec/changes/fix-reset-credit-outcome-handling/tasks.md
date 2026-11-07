@@ -6,6 +6,6 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Run parser, external API, helper, scheduler and replica regression coverage.
-- [ ] 2.2 Validate OpenSpec and required repository checks; review the focused diff.
+- [x] 2.1 Run parser, external API, helper, scheduler and replica regression coverage.
+- [x] 2.2 Validate OpenSpec and required repository checks; review the focused diff.
 - [ ] 2.3 Publish and integrate through required gates; deploy reviewed source and verify the affected path, or record the exact blocker.
