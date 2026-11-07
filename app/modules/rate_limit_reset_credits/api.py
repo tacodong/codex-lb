@@ -408,8 +408,18 @@ async def _redeem_soonest_reset_credit_locked(
     except ConsumeResetCreditError as exc:
         raise _translate_consume_error(exc) from exc
 
+    log_outcome = logger.info if result.code == "reset" and result.windows_reset > 0 else logger.warning
+    log_outcome(
+        "Reset credit consume completed account_id=%s code=%s windows_reset=%s",
+        account.id,
+        result.code,
+        result.windows_reset,
+    )
     redeemed_at = result.credit.redeemed_at if result.credit else None
-    available_count_after = max(0, credits_response.available_count - 1)
+    consumed_available_credit = (
+        result.code == "reset" and _select_available_credit_by_id(credits_response, credit_id) is not None
+    )
+    available_count_after = max(0, credits_response.available_count - int(consumed_available_credit))
     await store.invalidate(account.id)
     await bump_cache_invalidation_local(NAMESPACE_RESET_CREDITS)
 
@@ -418,7 +428,7 @@ async def _redeem_soonest_reset_credit_locked(
             await refresh_usage(redeem_account)
         except Exception:
             logger.warning(
-                "Reset credit consume succeeded but usage refresh failed account_id=%s",
+                "Reset credit consume completed but usage refresh failed account_id=%s",
                 account.id,
                 exc_info=True,
             )

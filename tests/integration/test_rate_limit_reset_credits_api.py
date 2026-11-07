@@ -16,6 +16,7 @@ from app.core.clients.rate_limit_reset_credits import (
 )
 from app.db.session import SessionLocal
 from app.modules.rate_limit_reset_credits import api as reset_credits_api
+from app.modules.rate_limit_reset_credits.redeem_coordination import get_pinned_redeem_credit_id
 from app.modules.rate_limit_reset_credits.store import get_rate_limit_reset_credits_store
 
 pytestmark = pytest.mark.integration
@@ -157,6 +158,65 @@ async def test_consume_active_account_returns_success_with_mocked_upstream(async
     assert captured["consume_credit_id"] == "credit-1"
     assert captured["redeem_request_id"] == "dashboard-retry-id"
     assert captured["consume_had_token"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["nothing_to_reset", "no_credit", "already_redeemed"])
+async def test_consume_preserves_upstream_null_credit_outcome(async_client, monkeypatch, code: str) -> None:
+    consume_calls = 0
+
+    async def fake_fetch(*args: Any, **kwargs: Any) -> ResetCreditsResponse:
+        return _upstream_response([_credit("credit-1")])
+
+    async def fake_consume(*args: Any, **kwargs: Any) -> ConsumeResetCreditResponse:
+        nonlocal consume_calls
+        consume_calls += 1
+        return ConsumeResetCreditResponse.model_validate({"code": code, "credit": None, "windows_reset": 0})
+
+    async def noop_refresh(account) -> None:  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(reset_credits_api, "fetch_reset_credits", fake_fetch)
+    monkeypatch.setattr(reset_credits_api, "consume_reset_credit", fake_consume)
+    monkeypatch.setattr(reset_credits_api, "_build_refresh_usage_callback", lambda _context: noop_refresh)
+    account_id = await _import_test_account(async_client, email="reset-null@example.com", account_id="acc_reset_null")
+    await get_rate_limit_reset_credits_store().set(account_id, _snapshot([_credit("credit-1")]))
+
+    response = await async_client.post(f"/api/accounts/{account_id}/rate-limit-reset-credits/consume")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"code": code, "windowsReset": 0, "redeemedAt": None}
+    assert consume_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_consume_confirmed_noop_preserves_real_ledger_pin(async_client, monkeypatch) -> None:
+    async def fake_fetch(*args: Any, **kwargs: Any) -> ResetCreditsResponse:
+        return _upstream_response([_credit("credit-1")])
+
+    async def fake_consume(*args: Any, **kwargs: Any) -> ConsumeResetCreditResponse:
+        return ConsumeResetCreditResponse.model_validate(
+            {"code": "nothing_to_reset", "credit": {"id": "credit-1", "status": "available"}, "windows_reset": 0}
+        )
+
+    async def noop_refresh(account) -> None:  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(reset_credits_api, "fetch_reset_credits", fake_fetch)
+    monkeypatch.setattr(reset_credits_api, "consume_reset_credit", fake_consume)
+    monkeypatch.setattr(reset_credits_api, "_build_refresh_usage_callback", lambda _context: noop_refresh)
+    account_id = await _import_test_account(
+        async_client, email="reset-unused@example.com", account_id="acc_reset_unused"
+    )
+    await get_rate_limit_reset_credits_store().set(account_id, _snapshot([_credit("credit-1")]))
+
+    response = await async_client.post(
+        f"/api/accounts/{account_id}/rate-limit-reset-credits/consume", json={"redeemRequestId": "confirmed-unused"}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"code": "nothing_to_reset", "windowsReset": 0, "redeemedAt": None}
+    assert await get_pinned_redeem_credit_id(account_id, "confirmed-unused") == "credit-1"
 
 
 @pytest.mark.asyncio
