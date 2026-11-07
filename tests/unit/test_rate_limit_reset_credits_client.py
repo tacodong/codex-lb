@@ -332,6 +332,39 @@ async def test_consume_reset_credit_sends_credit_id_and_uuid_redeem_request_id()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["nothing_to_reset", "no_credit", "already_redeemed"])
+@pytest.mark.parametrize("routed", [False, True])
+async def test_consume_reset_credit_preserves_null_credit_outcome(code: str, routed: bool) -> None:
+    state = ClientState()
+    response = StubResponse(200, {"code": code, "credit": None, "windows_reset": 0}, "")
+
+    class StubCodexClient:
+        async def request(self, method: str, url: str, **kwargs: Any) -> StubResponse:
+            state.calls += 1
+            state.method = method
+            state.json_body = kwargs["json"]
+            return response
+
+    result = await consume_reset_credit(
+        "access-token",
+        "acc_workspace",
+        "RateLimitResetCredit_test",
+        redeem_request_id="same-request",
+        base_url="http://upstream.test/backend-api",
+        client=None if routed else cast(Any, StubRetryClient([response], state)),
+        route=cast(Any, object()) if routed else None,
+        codex_client=cast(Any, StubCodexClient()) if routed else None,
+        allow_direct_egress=not routed,
+    )
+
+    assert result.code == code
+    assert result.credit is None
+    assert result.windows_reset == 0
+    assert state.calls == 1
+    assert state.json_body == {"credit_id": "RateLimitResetCredit_test", "redeem_request_id": "same-request"}
+
+
+@pytest.mark.asyncio
 async def test_consume_reset_credit_generates_fresh_redeem_request_id_each_call() -> None:
     ids: list[str] = []
     for _ in range(2):

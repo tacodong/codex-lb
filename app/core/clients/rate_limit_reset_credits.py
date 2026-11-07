@@ -84,7 +84,7 @@ class ConsumeResetCreditResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     code: str
-    credit: ConsumeResetCreditCredit
+    credit: ConsumeResetCreditCredit | None
     windows_reset: int
 
 

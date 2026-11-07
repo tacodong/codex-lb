@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
 from datetime import datetime
 from types import SimpleNamespace
@@ -977,6 +978,90 @@ async def test_redeem_restores_snapshot_when_force_refresh_returns_false(
     assert restored is not None
     assert restored.available_count == 0
     assert selection_cache.invalidated == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("code", "credit", "windows_reset"),
+    [
+        ("nothing_to_reset", {"id": "only", "status": "available"}, 0),
+        ("no_credit", None, 0),
+        ("already_redeemed", {"id": "only", "status": "redeemed"}, 0),
+        ("reset", {"id": "only", "status": "redeemed"}, 1),
+    ],
+)
+async def test_redeem_preserves_binding_and_reports_actual_outcome(
+    fake_redeem_ledger: dict[tuple[str, str], str],
+    caplog: pytest.LogCaptureFixture,
+    code: str,
+    credit: dict[str, str] | None,
+    windows_reset: int,
+) -> None:
+    store = RateLimitResetCreditsStore()
+    await store.set("acc_1", _snapshot([_credit("only")]))
+    caplog.set_level(logging.INFO, logger=reset_credits_api.__name__)
+
+    async def consume_fn(*args: Any, **kwargs: Any) -> ConsumeResetCreditResponse:
+        assert fake_redeem_ledger == {("acc_1", "auto-id"): "only"}
+        return ConsumeResetCreditResponse.model_validate(
+            {"code": code, "credit": credit, "windows_reset": windows_reset}
+        )
+
+    result = await _redeem_soonest_reset_credit(
+        account=_account(),
+        store=store,
+        encryptor=StubEncryptor(),
+        fetch_fn=_static_fetch_fn(_response([_credit("only")])),
+        consume_fn=consume_fn,
+        redeem_request_id="auto-id",
+        skip_if_redeem_request_pinned=True,
+    )
+
+    assert fake_redeem_ledger == {("acc_1", "auto-id"): "only"}
+    assert result.response.code == code
+    assert result.available_count_after == (0 if code == "reset" else 1)
+    outcome_logs = [record for record in caplog.records if "Reset credit consume completed" in record.getMessage()]
+    assert len(outcome_logs) == 1
+    assert f"code={code} windows_reset={windows_reset}" in outcome_logs[0].getMessage()
+    assert outcome_logs[0].levelno == (logging.INFO if code == "reset" else logging.WARNING)
+
+
+@pytest.mark.asyncio
+async def test_redeem_uncertain_failure_keeps_pin_and_blocks_automatic_retry(
+    fake_redeem_ledger: dict[tuple[str, str], str],
+) -> None:
+    store = RateLimitResetCreditsStore()
+    await store.set("acc_1", _snapshot([_credit("only")]))
+    calls = 0
+
+    async def consume_fn(*args: Any, **kwargs: Any) -> ConsumeResetCreditResponse:
+        nonlocal calls
+        calls += 1
+        raise ConsumeResetCreditError(0, "connection lost")
+
+    with pytest.raises(DashboardServiceUnavailableError):
+        await _redeem_soonest_reset_credit(
+            account=_account(),
+            store=store,
+            encryptor=StubEncryptor(),
+            fetch_fn=_static_fetch_fn(_response([_credit("only")])),
+            consume_fn=consume_fn,
+            redeem_request_id="auto-id",
+            skip_if_redeem_request_pinned=True,
+        )
+    with pytest.raises(ResetCreditRedeemRequestAlreadyPinned):
+        await _redeem_soonest_reset_credit(
+            account=_account(),
+            store=store,
+            encryptor=StubEncryptor(),
+            fetch_fn=_raise_not_called,  # type: ignore[arg-type]
+            consume_fn=consume_fn,
+            redeem_request_id="auto-id",
+            skip_if_redeem_request_pinned=True,
+        )
+
+    assert calls == 1
+    assert fake_redeem_ledger == {("acc_1", "auto-id"): "only"}
 
 
 @pytest.mark.asyncio

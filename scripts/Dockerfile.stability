@@ -15,6 +15,8 @@ FROM ghcr.io/soju06/codex-lb:1.25.0-beta.9@sha256:514b4d7fc0c2a7dea5ced20f97eceb
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+       apt=3.0.4 \
+       libapt-pkg7.0=3.0.4 \
        libpcre2-8-0=10.46-1~deb13u3 \
        libssl3t64=3.5.7-1~deb13u3 \
        openssl=3.5.7-1~deb13u3 \
@@ -45,3 +47,5 @@ COPY --chown=app:app app/modules/proxy/account_cache.py app/modules/proxy/load_b
 COPY --chown=app:app app/modules/accounts/auth_manager.py /app/app/modules/accounts/auth_manager.py
 COPY --chown=app:app app/modules/proxy/_service/warmup.py /app/app/modules/proxy/_service/warmup.py
 COPY --chown=app:app app/modules/proxy/_load_balancer/unbound_selection.py /app/app/modules/proxy/_load_balancer/unbound_selection.py
+COPY --chown=app:app app/core/clients/rate_limit_reset_credits.py /app/app/core/clients/rate_limit_reset_credits.py
+COPY --chown=app:app app/modules/rate_limit_reset_credits/api.py /app/app/modules/rate_limit_reset_credits/api.py
