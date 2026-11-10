@@ -372,3 +372,10 @@ own requests and connections without writing a clean marker for the primary's
 store. For example, a keyed replica can serve a new WebSocket while a primary's
 already-open WebSocket continues on the primary. This role requires the primary
 to remain online; it is not an ownership takeover or an automatic database move.
+
+### Outbound payload budget
+
+Screenshot-heavy Desktop turns can exceed 15 MiB while fitting the 128 MiB
+Responses ingress budget. Outbound request size now shares that ingress budget;
+the 16 MiB received-event cap controls a different direction. Larger requests
+remain subject to upstream validation and model context limits.

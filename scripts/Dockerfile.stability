@@ -48,4 +48,5 @@ COPY --chown=app:app app/modules/accounts/auth_manager.py /app/app/modules/accou
 COPY --chown=app:app app/modules/proxy/_service/warmup.py /app/app/modules/proxy/_service/warmup.py
 COPY --chown=app:app app/modules/proxy/_load_balancer/unbound_selection.py /app/app/modules/proxy/_load_balancer/unbound_selection.py
 COPY --chown=app:app app/core/clients/rate_limit_reset_credits.py /app/app/core/clients/rate_limit_reset_credits.py
+COPY --chown=app:app app/core/clients/proxy.py /app/app/core/clients/proxy.py
 COPY --chown=app:app app/modules/rate_limit_reset_credits/api.py /app/app/modules/rate_limit_reset_credits/api.py

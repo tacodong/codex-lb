@@ -4968,7 +4968,10 @@ def test_v1_responses_websocket_accepts_and_reuses_generated_turn_state(app_inst
     assert seen["sticky_kind"] == proxy_module.StickySessionKind.PROMPT_CACHE
 
 
-def test_v1_responses_websocket_normalizes_payload_before_forwarding(app_instance, monkeypatch):
+@pytest.mark.parametrize("path", ["/v1/responses", "/backend-api/codex/responses"])
+@pytest.mark.parametrize("padding_bytes", [0, 24 * 1024 * 1024])
+def test_v1_responses_websocket_normalizes_payload_before_forwarding(app_instance, monkeypatch, path, padding_bytes):
+    input_text = " " * padding_bytes + "cache me"
     upstream_messages = [
         _FakeUpstreamMessage(
             "text",
@@ -5045,7 +5048,7 @@ def test_v1_responses_websocket_normalizes_payload_before_forwarding(app_instanc
     request_payload = {
         "type": "response.create",
         "model": "gpt-5.4",
-        "input": "cache me",
+        "input": input_text,
         "promptCacheKey": "thread_alias",
         "promptCacheRetention": "12h",
         "tools": [{"type": "web_search_preview"}],
@@ -5054,7 +5057,7 @@ def test_v1_responses_websocket_normalizes_payload_before_forwarding(app_instanc
     }
 
     with TestClient(app_instance) as client:
-        with client.websocket_connect("/v1/responses") as websocket:
+        with client.websocket_connect(path) as websocket:
             websocket.send_text(json.dumps(request_payload))
             first = json.loads(websocket.receive_text())
             second = json.loads(websocket.receive_text())
@@ -5073,7 +5076,7 @@ def test_v1_responses_websocket_normalizes_payload_before_forwarding(app_instanc
             {
                 "model": "gpt-5.4",
                 "instructions": "",
-                "input": [{"role": "user", "content": [{"type": "input_text", "text": "cache me"}]}],
+                "input": [{"role": "user", "content": [{"type": "input_text", "text": input_text}]}],
                 "tools": [{"type": "web_search"}],
                 "service_tier": "priority",
                 "store": False,
