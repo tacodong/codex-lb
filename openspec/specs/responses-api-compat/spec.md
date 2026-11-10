@@ -1732,7 +1732,7 @@ When serving Responses routes, the service MUST prefer eligible accounts that ar
 - **THEN** the below-threshold candidate is chosen first
 
 ### Requirement: Upstream Responses event size budget
-The service SHALL allow upstream Responses SSE events and upstream websocket message frames up to 16 MiB before treating them as oversized. The budget is a fixed application constant (`MAX_SSE_EVENT_BYTES` in `app/core/clients/proxy.py`); it MUST NOT be operator-configurable, and the serialized upstream `response.create` budget (15 MiB) MUST be derived from it so the envelope can never exceed the frame ceiling.
+The service SHALL allow received upstream Responses SSE events and upstream websocket message frames up to 16 MiB before treating them as oversized. The budget is a fixed application constant (`MAX_SSE_EVENT_BYTES` in `app/core/clients/proxy.py`); it MUST NOT be operator-configurable. The serialized outbound `response.create` budget MUST independently share the fixed 128 MiB Responses ingress budget.
 
 #### Scenario: built-in tool output exceeds the old 2 MiB limit
 - **WHEN** upstream Responses traffic includes a single SSE event or websocket message frame larger than 2 MiB but not larger than 16 MiB
@@ -1740,7 +1740,7 @@ The service SHALL allow upstream Responses SSE events and upstream websocket mes
 
 #### Scenario: The event budget is not an environment setting
 - **WHEN** the process starts with `CODEX_LB_MAX_SSE_EVENT_BYTES` or `CODEX_LB_UPSTREAM_RESPONSE_CREATE_MAX_BYTES` set
-- **THEN** the values are ignored, startup logs the removed-setting warning once, and the 16 MiB / 15 MiB budgets apply
+- **THEN** the values are ignored, startup logs the removed-setting warning once, and the 16 MiB received-event / 128 MiB outbound-request budgets apply
 
 ### Requirement: Upstream Responses transport strategy
 For streaming Codex/Responses proxy requests, the system MUST let operators choose the upstream transport strategy through dashboard settings, and the dashboard setting MUST be the only source of that choice: there MUST NOT be an environment variable for it, and the service MUST warn at startup when the removed `CODEX_LB_UPSTREAM_STREAM_TRANSPORT` variable is still set. The persisted strategy MUST be one of `auto`, `http`, or `websocket`; the settings API MUST reject any other value. Runtime readers MUST resolve the strategy from the dashboard settings snapshot through one shared resolver, and a snapshot still carrying the legacy `default` sentinel MUST resolve to `auto`. Upgrading MUST migrate persisted `default` rows to `auto`.
