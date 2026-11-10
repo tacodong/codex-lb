@@ -8,3 +8,10 @@ Use the existing 128MiB Responses ingress constant for serialized outbound respo
 
 ## Impact
 Responses WebSocket forwarding and downstream image packaging. Larger requests can consume more transient memory and remain subject to upstream/model limits.
+
+## Required release-gate repairs
+The candidate and standard image scans require the fixed Debian zlib package.
+The unchanged Rust audit gate now rejects Hyper1.8.1's unmaintained pin-utils
+transitive dependency (RUSTSEC-2026-0441); Hyper1.9.0 is the first compatible
+release inspected that removes it. Native Cargo updates only Hyper and removes
+pin-utils. Keep the audit and scan gates enabled.
