@@ -21,6 +21,7 @@ RUN apt-get update \
        libssl3t64=3.5.7-1~deb13u3 \
        openssl=3.5.7-1~deb13u3 \
        openssl-provider-legacy=3.5.7-1~deb13u3 \
+       zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=uv-bin,source=/uv,target=/uv,ro \
     --mount=type=bind,source=pyproject.toml,target=/app/pyproject.toml,ro \
@@ -48,4 +49,5 @@ COPY --chown=app:app app/modules/accounts/auth_manager.py /app/app/modules/accou
 COPY --chown=app:app app/modules/proxy/_service/warmup.py /app/app/modules/proxy/_service/warmup.py
 COPY --chown=app:app app/modules/proxy/_load_balancer/unbound_selection.py /app/app/modules/proxy/_load_balancer/unbound_selection.py
 COPY --chown=app:app app/core/clients/rate_limit_reset_credits.py /app/app/core/clients/rate_limit_reset_credits.py
+COPY --chown=app:app app/core/clients/proxy.py /app/app/core/clients/proxy.py
 COPY --chown=app:app app/modules/rate_limit_reset_credits/api.py /app/app/modules/rate_limit_reset_credits/api.py

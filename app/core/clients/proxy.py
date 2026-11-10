@@ -79,6 +79,7 @@ from app.core.errors import (
     synthetic_stream_failure_event,
     synthetic_transport_failure_event,
 )
+from app.core.ingress_limits import MAX_DECOMPRESSED_RESPONSES_BODY_BYTES
 from app.core.openai.exceptions import ClientPayloadError
 from app.core.openai.model_registry import get_model_registry
 from app.core.openai.models import CompactResponsePayload, OpenAIError, normalize_compaction_item_id
@@ -226,9 +227,8 @@ _IMAGE_INLINE_TIMEOUT_SECONDS = 8.0
 # outputs) do not fail locally with a 1009 before upstream completion.
 MAX_SSE_EVENT_BYTES: Final[int] = 16 * 1024 * 1024
 _WEBSOCKET_TRANSPORT_HEADROOM_BYTES: Final[int] = 2 * 1024 * 1024
-# Serialized ``response.create`` budget for the upstream websocket: one MiB
-# under the 16 MiB frame ceiling so the envelope never trips the frame limit.
-UPSTREAM_RESPONSE_CREATE_MAX_BYTES: Final[int] = MAX_SSE_EVENT_BYTES - 1 * 1024 * 1024
+# Outbound requests share the ingress budget; received events have a separate limit.
+UPSTREAM_RESPONSE_CREATE_MAX_BYTES: Final[int] = MAX_DECOMPRESSED_RESPONSES_BODY_BYTES
 _BLOCKED_LITERAL_HOSTS = {"localhost", "localhost.localdomain"}
 _UPSTREAM_RESPONSE_CREATE_MAX_BYTES = UPSTREAM_RESPONSE_CREATE_MAX_BYTES
 _UPSTREAM_RESPONSE_CREATE_WARN_BYTES = int(_UPSTREAM_RESPONSE_CREATE_MAX_BYTES * 0.8)

@@ -373,7 +373,8 @@ Behaviour is unchanged; each env name gets the one-release WARN.
 
 - Upstream transport: `CODEX_LB_MAX_SSE_EVENT_BYTES` (16 MiB),
   `CODEX_LB_UPSTREAM_RESPONSE_CREATE_MAX_BYTES` (15 MiB, derived from the
-  frame budget), `CODEX_LB_UPSTREAM_COMPACT_TIMEOUT_SECONDS` (no constant —
+  frame budget at removal; now 128 MiB, shared with Responses ingress),
+  `CODEX_LB_UPSTREAM_COMPACT_TIMEOUT_SECONDS` (no constant —
   the dashboard `compact_request_budget_seconds` was already the only total
   cap that ever applied).
 - Auth / token refresh: `CODEX_LB_OAUTH_TIMEOUT_SECONDS` (30 s),
