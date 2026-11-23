@@ -28,6 +28,7 @@ from app.core.auth.guardian import build_auth_guardian_scheduler
 from app.core.auth.providers.registry import get_auth_provider_registry
 from app.core.balancer import configure_replica_salt
 from app.core.bootstrap import ensure_auto_bootstrap_token, log_bootstrap_token
+from app.core.clients.codex_version import get_codex_version_cache
 from app.core.clients.http import close_http_client, init_http_client
 from app.core.clients.native_egress import close_discovered_native_egress_client
 from app.core.config.dashboard_overrides import effective_settings
@@ -640,15 +641,19 @@ async def lifespan(app: FastAPI):
     cache_poller.on_invalidation(NAMESPACE_RESET_CREDITS, get_rate_limit_reset_credits_store().invalidate)
     from app.core.openai.model_registry_store import reconcile_model_registry_from_store
 
+    codex_version_snapshot = settings.data_dir / "codex-version-cache.json"
+
+    async def reconcile_invalidated_models() -> None:
+        if serving_replica:
+            await get_codex_version_cache().restore(codex_version_snapshot)
+        await reconcile_model_registry_from_store(raise_on_error=True)
+
     # raise_on_error=True so a transient load failure leaves the
     # model_registry version unacknowledged and is retried on the next poll
     # cycle (matching the account_routing refresh callback) instead of being
     # swallowed, which would strand this replica on the stale catalog until
     # the non-leader scheduler backstop.
-    cache_poller.on_invalidation(
-        NAMESPACE_MODEL_REGISTRY,
-        lambda: reconcile_model_registry_from_store(raise_on_error=True),
-    )
+    cache_poller.on_invalidation(NAMESPACE_MODEL_REGISTRY, reconcile_invalidated_models)
     set_cache_invalidation_poller(cache_poller)
 
     # Seed the invalidation version baseline BEFORE loading the routing snapshot
@@ -682,6 +687,9 @@ async def lifespan(app: FastAPI):
     # Warm the in-memory registry from the persisted snapshot before any
     # scheduler starts so a restarted replica serves the refreshed catalog
     # instead of the bootstrap floor. Never fails startup.
+    if serving_replica:
+        # Serving replicas skip both schedulers that load the SDK fingerprint.
+        await get_codex_version_cache().restore(codex_version_snapshot)
     await reconcile_model_registry_from_store()
 
     await cache_poller.start()

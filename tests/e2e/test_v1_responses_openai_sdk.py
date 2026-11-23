@@ -28,9 +28,14 @@ import json
 import openai
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
+import app.main as main_module
 import app.modules.proxy.service as proxy_module
+from app.core.cache.invalidation import NAMESPACE_MODEL_REGISTRY, get_cache_invalidation_poller
+from app.core.clients import codex_version
+from app.core.clients.proxy import _build_upstream_headers
+from app.core.config.settings import get_settings
 from app.core.openai.model_registry import ReasoningLevel, UpstreamModel, get_model_registry
 
 pytestmark = pytest.mark.e2e
@@ -350,6 +355,60 @@ def _patch_upstream_stream(monkeypatch, blocks: list[str]) -> None:
             yield block
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
+
+
+@pytest.mark.asyncio
+async def test_sdk_serving_replica_uses_shared_client_version(
+    db_setup, monkeypatch, tmp_path, import_test_account
+) -> None:
+    del db_setup
+    monkeypatch.setenv("CODEX_LB_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_LB_MODEL_REGISTRY_CLIENT_VERSION", "0.159.2")
+    monkeypatch.setenv("CODEX_LB_HTTP_RESPONSES_SESSION_BRIDGE_INSTANCE_ID", "sdk-version-test")
+    get_settings.cache_clear()
+    monkeypatch.setattr(main_module, "require_sqlite_lifecycle_owner", lambda _url: None)
+    monkeypatch.setattr(codex_version, "_codex_version_cache", codex_version.CodexVersionCache())
+    snapshot = tmp_path / "codex-version-cache.json"
+    snapshot.write_text('{"version": "0.171.0"}', encoding="utf-8")
+    versions = []
+
+    async def fake_stream(payload, headers, access_token, account_id, **kwargs):
+        egress = _build_upstream_headers(headers, access_token, account_id)
+        versions.append((egress["version"], egress["User-Agent"].split()[0]))
+        yield _response_completed_empty("resp_sdk_version", 0)
+
+    monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
+    app = main_module.create_serving_replica_app()
+    async with app.router.lifespan_context(app):
+        poller = get_cache_invalidation_poller()
+        assert poller is not None
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            await import_test_account(client, account_id="acc_version", email="sdk-version@example.com")
+
+            async def request_sdk() -> None:
+                response = await client.post(
+                    "/v1/responses",
+                    json={"model": DEFAULT_MODEL, "input": "test", "stream": True},
+                    headers={"User-Agent": "OpenAI/Python test"},
+                )
+                assert response.status_code == 200
+                assert "response.completed" in response.text
+
+            await request_sdk()
+            snapshot.write_text('{"version": "0.172.0"}', encoding="utf-8")
+            assert await poller.bump(NAMESPACE_MODEL_REGISTRY)
+            await poller._poll_once()
+            await request_sdk()
+            snapshot.write_text('{"version": "0.163.0"}', encoding="utf-8")
+            assert await poller.bump(NAMESPACE_MODEL_REGISTRY)
+            await poller._poll_once()
+            await request_sdk()
+
+    assert versions == [
+        ("0.171.0", "codex_cli_rs/0.171.0"),
+        ("0.172.0", "codex_cli_rs/0.172.0"),
+        ("0.172.0", "codex_cli_rs/0.172.0"),
+    ]
 
 
 # ---------------------------------------------------------------------------
