@@ -164,7 +164,7 @@ kept the primary's connection, lifecycle marker and owner lock intact while a
 replica stopped, and verified a conversation across the old/new process boundary.
 The owning change is
 [serve-with-existing-sqlite-owner](https://github.com/tacodong/codex-lb/tree/codex/stability-beta9-base/openspec/changes/archive/2026-10-29-serve-with-existing-sqlite-owner).
-See [the serving-replica contract](../openspec/specs/responses-api-compat/spec.md#requirement-serving-replicas-preserve-the-existing-database-lifecycle-owner)
+See [the serving-replica contract](https://github.com/tacodong/codex-lb/blob/codex/stability-beta9-base/openspec/specs/responses-api-compat/spec.md#requirement-serving-replicas-preserve-the-existing-database-lifecycle-owner)
 for both backends.
 Use the upgrade and rollback procedure below for the separate network-routing
 boundary; do not replace the primary to activate this serving role.
