@@ -347,6 +347,9 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/e
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/TheFoolThatDoesntBelongToThisEra"><img src="https://avatars.githubusercontent.com/u/252236154?v=4?s=100" width="100px;" alt="⃟"/><br /><sub><b>⃟</b></sub></a><br /><a href="https://github.com/Soju06/codex-lb/commits?author=TheFoolThatDoesntBelongToThisEra" title="Code">💻</a> <a href="https://github.com/Soju06/codex-lb/commits?author=TheFoolThatDoesntBelongToThisEra" title="Tests">⚠️</a> <a href="https://github.com/Soju06/codex-lb/commits?author=TheFoolThatDoesntBelongToThisEra" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/tacodong"><img src="https://avatars.githubusercontent.com/u/80506976?v=4?s=100" width="100px;" alt="tacodong"/><br /><sub><b>tacodong</b></sub></a><br /><a href="https://github.com/Soju06/codex-lb/commits?author=tacodong" title="Code">💻</a> <a href="https://github.com/Soju06/codex-lb/commits?author=tacodong" title="Tests">⚠️</a> <a href="#infra-tacodong" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
     </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ale-benassi"><img src="https://avatars.githubusercontent.com/u/18260178?v=4?s=100" width="100px;" alt="Alessandro Benassi"/><br /><sub><b>Alessandro Benassi</b></sub></a><br /><a href="https://github.com/Soju06/codex-lb/commits?author=ale-benassi" title="Documentation">📖</a></td>
+    </tr>
   </tbody>
 </table>
 
