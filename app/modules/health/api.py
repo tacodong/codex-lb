@@ -5,17 +5,19 @@ from datetime import timedelta
 from hashlib import sha256
 from ipaddress import ip_address
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import select as sa_select
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clients.codex_version import get_codex_version_cache, meets_client_version_minimum
 from app.core.config.settings import get_settings
+from app.core.openai.model_registry import get_model_registry
 from app.core.shutdown import DRAIN_DEADLINE_HEADER
 from app.core.utils.time import utcnow
 from app.db.models import BridgeRingMember
 from app.db.session import get_session
-from app.modules.health.schemas import BridgeRingInfo, HealthCheckResponse, HealthResponse
+from app.modules.health.schemas import BridgeRingInfo, HealthCheckResponse, HealthResponse, SDKClientVersionResponse
 from app.modules.proxy.ring_membership import RING_STALE_THRESHOLD_SECONDS
 
 router = APIRouter(tags=["health"])
@@ -36,6 +38,32 @@ def _is_internal_client_host(client_host: str | None) -> bool:
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+@router.get("/internal/sdk-client-version", include_in_schema=False)
+async def sdk_client_version(
+    request: Request,
+    model: str = Query(min_length=1, max_length=128),
+) -> SDKClientVersionResponse:
+    if not _is_internal_client_host(request.client.host if request.client is not None else None):
+        raise HTTPException(status_code=403, detail="Internal access required")
+
+    version = get_codex_version_cache().cached_version_or_default()
+    metadata = get_model_registry().get_models_with_fallback().get(model)
+    minimum = metadata.minimal_client_version if metadata is not None else None
+    compatible = meets_client_version_minimum(version, minimum)
+    if metadata is None:
+        status = "unknown_model"
+    elif compatible is None:
+        status = "version_unavailable"
+    else:
+        status = "compatible" if compatible else "below_minimum"
+    return SDKClientVersionResponse(
+        model=model,
+        effective_version=version,
+        minimum_version=minimum,
+        status=status,
+    )
 
 
 @router.get("/health/live", response_model=HealthCheckResponse)

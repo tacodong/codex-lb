@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -25,3 +27,10 @@ class HealthCheckResponse(BaseModel):
     status: str
     checks: dict[str, str] | None = None
     bridge_ring: BridgeRingInfo | None = None
+
+
+class SDKClientVersionResponse(BaseModel):
+    model: str
+    effective_version: str
+    minimum_version: str | None
+    status: Literal["compatible", "below_minimum", "unknown_model", "version_unavailable"]

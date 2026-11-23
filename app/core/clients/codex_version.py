@@ -25,6 +25,12 @@ def _version_key(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
+def meets_client_version_minimum(version: str, minimum: str | None) -> bool | None:
+    if minimum is None or not _VERSION_RE.fullmatch(minimum) or not _VERSION_RE.fullmatch(version):
+        return None
+    return _version_key(version) >= _version_key(minimum)
+
+
 class CodexVersionCache:
     def __init__(self, *, ttl_seconds: float = 3600.0) -> None:
         if ttl_seconds <= 0:
