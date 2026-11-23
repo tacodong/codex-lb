@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 import aiohttp
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from sqlalchemy.engine import make_url
 from starlette.staticfiles import StaticFiles
 
 from app.core.audit.service import drain_audit_log_tasks
@@ -523,7 +524,8 @@ async def lifespan(app: FastAPI):
     if serving_replica:
         if "http_responses_session_bridge_instance_id" not in settings.model_fields_set:
             raise RuntimeError("Serving replicas require an explicit bridge instance identity")
-        await asyncio.to_thread(require_sqlite_lifecycle_owner, settings.database_url)
+        if make_url(settings.database_url).get_backend_name() != "postgresql":
+            await asyncio.to_thread(require_sqlite_lifecycle_owner, settings.database_url)
         if (
             settings.http_responses_session_bridge_instance_id
             in await RingMembershipService(SessionLocal).list_active()

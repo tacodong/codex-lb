@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import Request, WebSocket
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import make_url
 from starlette.testclient import WebSocketDenialResponse
 
 import app.main as main_module
@@ -65,6 +66,7 @@ async def test_serving_lifespan_leaves_primary_work_and_marker_alone(
     monkeypatch.setenv("CODEX_LB_HTTP_RESPONSES_SESSION_BRIDGE_ENABLED", str(bridge_enabled).lower())
     monkeypatch.setenv("CODEX_LB_HTTP_RESPONSES_SESSION_BRIDGE_INSTANCE_ID", "isolated-serving-test")
     get_settings.cache_clear()
+    backend = make_url(get_settings().database_url).get_backend_name()
     owner_guard = Mock()
     monkeypatch.setattr(main_module, "require_sqlite_lifecycle_owner", owner_guard)
     primary_only = {}
@@ -89,7 +91,10 @@ async def test_serving_lifespan_leaves_primary_work_and_marker_alone(
     async with app.router.lifespan_context(app):
         assert app.state.sqlite_serving_replica is True
         assert app.state.proxy_api_keys_required is False
-    owner_guard.assert_called_once()
+    if backend == "postgresql":
+        owner_guard.assert_not_called()
+    else:
+        owner_guard.assert_called_once()
     for spy in primary_only.values():
         spy.assert_not_awaited()
     for name, scheduler in schedulers.items():
