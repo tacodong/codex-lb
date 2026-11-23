@@ -10,4 +10,5 @@ catalogue update. Preserve the primary's scheduler ownership and keep I/O off
 the inference path.
 
 The release candidate also needs the fixed `dnspython` 2.9.2 lock entry for
-CVE-2026-128089. The candidate scan remains required.
+CVE-2026-128089 and `url` 2.5.9 for RUSTSEC-2026-0592. The candidate scan and
+Rust dependency audit remain required.
