@@ -8,3 +8,6 @@ available to a native Codex client when that fallback is too old.
 Read the shared version snapshot before serving traffic and when reconciling a
 catalogue update. Preserve the primary's scheduler ownership and keep I/O off
 the inference path.
+
+The release candidate also needs the fixed `dnspython` 2.9.2 lock entry for
+CVE-2026-128089. The candidate scan remains required.
