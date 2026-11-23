@@ -10885,22 +10885,29 @@ MUST pass the native transport wire regressions before deployment.
 - **AND** unknown include values remain rejected
 
 
-### Requirement: Serving replicas preserve the existing SQLite lifecycle owner
-An explicitly selected serving-replica factory MUST require an existing SQLite
-store with a live lifecycle lock owner and an explicit unique bridge identity.
+### Requirement: Serving replicas preserve the existing database lifecycle owner
+An explicitly selected serving-replica factory MUST require an explicit unique
+bridge identity. It MUST require an existing store with a live lifecycle lock
+owner on SQLite. On PostgreSQL it MUST use the initialized shared backend
+without a SQLite sentinel and validate the shared encryption and bridge state.
 It MUST NOT initialize or migrate the store, bootstrap credentials, purge shared
 startup history, start singleton scheduled jobs, or write a clean-shutdown marker.
 It MUST retain native inference routes, cache invalidation, model metadata,
 request settlement, process-local usage ingestion and key last-used flushing.
 
-#### Scenario: Primary remains active
-- **WHEN** a serving replica starts or stops beside an active primary
+#### Scenario: SQLite primary remains active
+- **WHEN** a serving replica starts or stops beside an active SQLite primary
 - **THEN** the primary retains its lifetime lock and serves existing connections
 - **AND** only the replica's local bridge and process resources are retired
 
-#### Scenario: Primary ownership is absent
-- **WHEN** the store or an active lifecycle owner is absent
+#### Scenario: SQLite primary ownership is absent
+- **WHEN** the SQLite store or an active lifecycle owner is absent
 - **THEN** replica startup fails without creating or initializing a store
+
+#### Scenario: Replacement uses the initialized PostgreSQL backend
+- **WHEN** a serving replica starts with the shared PostgreSQL binding
+- **THEN** it validates the shared state without a SQLite lifecycle sentinel
+- **AND** it does not start primary-only schedulers
 
 ### Requirement: Per-listener key enforcement preserves native validation
 A mandatory-key serving factory MUST require a valid native API key for both
