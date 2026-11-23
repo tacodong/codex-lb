@@ -141,11 +141,13 @@ Use the
 and the reproducible-artifact steps below. Preserve failed audit gates rather
 than making a candidate pass by disabling them.
 
-### Retain one SQLite lifecycle owner
+### Preserve database lifecycle ownership
 
 The explicit factories are `app.main:create_serving_replica_app` and
-`app.main:create_keyed_serving_replica_app`. They require an existing, actively
-owned local SQLite store. They do not run migrations, bootstrap an empty store,
+`app.main:create_keyed_serving_replica_app`. On SQLite, they require an existing,
+actively owned local store. On PostgreSQL, they use the initialized shared
+database and validate its encryption and bridge state without a SQLite
+sentinel. They do not run migrations, bootstrap an empty store,
 purge shared startup history, start singleton jobs or write the primary's
 clean-shutdown marker. They retain native serving, cache invalidation,
 persistence and process-local flush/settlement work.
@@ -162,6 +164,8 @@ kept the primary's connection, lifecycle marker and owner lock intact while a
 replica stopped, and verified a conversation across the old/new process boundary.
 The owning change is
 [serve-with-existing-sqlite-owner](https://github.com/tacodong/codex-lb/tree/codex/stability-beta9-base/openspec/changes/archive/2026-10-29-serve-with-existing-sqlite-owner).
+See [the serving-replica contract](https://github.com/tacodong/codex-lb/blob/codex/stability-beta9-base/openspec/specs/responses-api-compat/spec.md#requirement-serving-replicas-preserve-the-existing-database-lifecycle-owner)
+for both backends.
 Use the upgrade and rollback procedure below for the separate network-routing
 boundary; do not replace the primary to activate this serving role.
 
