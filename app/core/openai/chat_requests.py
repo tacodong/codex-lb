@@ -23,6 +23,29 @@ from app.core.utils.json_guards import is_json_list, is_json_mapping
 
 _SUPPORTED_CHAT_ROLES = frozenset({"system", "developer", "user", "assistant", "tool"})
 _TEXT_CONTENT_PART_TYPES = frozenset({"text", "input_text", "output_text"})
+_SCHEMA_CHILDREN = frozenset(
+    {
+        "additionalItems",
+        "additionalProperties",
+        "allOf",
+        "anyOf",
+        "contains",
+        "contentSchema",
+        "else",
+        "if",
+        "items",
+        "not",
+        "oneOf",
+        "prefixItems",
+        "propertyNames",
+        "then",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+    }
+)
+_SCHEMA_MAPS = frozenset(
+    {"$defs", "definitions", "dependencies", "dependentSchemas", "patternProperties", "properties"}
+)
 
 
 def _part_type(part: Mapping[str, JsonValue]) -> str | None:
@@ -229,6 +252,26 @@ class ChatStreamOptions(BaseModel):
     include_obfuscation: bool | None = None
 
 
+def _translate_openapi_byte_annotations(schema: JsonValue) -> JsonValue:
+    if isinstance(schema, list):
+        return [_translate_openapi_byte_annotations(child) for child in schema]
+    if not isinstance(schema, dict):
+        return schema
+
+    normalized = dict(schema)
+    if normalized.get("format") == "byte":
+        del normalized["format"]
+        description = normalized.get("description")
+        hint = "Value is a base64-encoded string."
+        normalized["description"] = f"{description} {hint}" if isinstance(description, str) and description else hint
+    for keyword, value in schema.items():
+        if keyword in _SCHEMA_CHILDREN:
+            normalized[keyword] = _translate_openapi_byte_annotations(value)
+        elif keyword in _SCHEMA_MAPS and isinstance(value, dict):
+            normalized[keyword] = {name: _translate_openapi_byte_annotations(child) for name, child in value.items()}
+    return normalized
+
+
 def _normalize_chat_tools(tools: list[JsonValue]) -> list[JsonValue]:
     normalized: list[JsonValue] = []
     for tool in tools:
@@ -245,13 +288,16 @@ def _normalize_chat_tools(tools: list[JsonValue]) -> list[JsonValue]:
             # chat-completions traffic too. Without this, ``strict: true``
             # would be silently dropped here, masking schema violations the
             # upstream Codex backend would otherwise reject.
+            strict = function.get("strict")
+            parameters = function.get("parameters")
+            if strict is not True:
+                parameters = _translate_openapi_byte_annotations(parameters)
             normalized_tool: dict[str, JsonValue] = {
                 "type": tool_type or "function",
                 "name": name,
                 "description": function.get("description"),
-                "parameters": function.get("parameters"),
+                "parameters": parameters,
             }
-            strict = function.get("strict")
             if isinstance(strict, bool):
                 normalized_tool["strict"] = strict
             normalized.append(normalized_tool)

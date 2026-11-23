@@ -61,6 +61,58 @@ async def test_v1_chat_completions_stream(async_client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_v1_chat_completions_translates_nested_openapi_byte_schema(async_client, monkeypatch):
+    auth = _make_auth_json("attachment", "attachments@example.com")
+    files = {"auth_json": ("auth.json", json.dumps(auth), "application/json")}
+    assert (await async_client.post("/api/accounts/import", files=files)).status_code == 200
+    seen = []
+
+    async def fake_stream(payload, headers, access_token, account_id, **kwargs):
+        seen.extend(payload.tools)
+        yield 'data: {"type":"response.completed","response":{"id":"resp_attachment","output":[]}}\n\n'
+
+    monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
+    schema = {
+        "type": "object",
+        "properties": {"attachment": {"$ref": "#/$defs/Attachment"}},
+        "required": ["attachment"],
+        "$defs": {
+            "Attachment": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "format": "byte", "description": "Attachment content."},
+                    "date": {"type": "string", "format": "date-time"},
+                },
+                "required": ["content"],
+                "examples": [{"content": {"format": "byte"}}],
+            }
+        },
+    }
+    response = await async_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "gpt-5.2",
+            "messages": [{"role": "user", "content": "ok"}],
+            "stream": True,
+            "tools": [{"type": "function", "function": {"name": "attachment_tool", "parameters": schema}}],
+        },
+    )
+    assert response.status_code == 200
+    assert seen[0]["name"] == "attachment_tool"
+    parameters = seen[0]["parameters"]
+    assert parameters["required"] == ["attachment"]
+    assert parameters["properties"] == schema["properties"]
+    attachment = parameters["$defs"]["Attachment"]
+    assert attachment["properties"]["content"] == {
+        "type": "string",
+        "description": "Attachment content. Value is a base64-encoded string.",
+    }
+    assert attachment["properties"]["date"]["format"] == "date-time"
+    assert attachment["required"] == ["content"]
+    assert attachment["examples"] == schema["$defs"]["Attachment"]["examples"]
+
+
+@pytest.mark.asyncio
 async def test_v1_chat_completions_stream_truncated_eof_emits_error_and_done(async_client, monkeypatch):
     # #given
     email = "chat-stream-truncated@example.com"
